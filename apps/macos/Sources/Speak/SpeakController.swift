@@ -5,8 +5,12 @@ public final class SpeakController: NSObject {
     static private(set) var shared: SpeakController!
 
     /// The app coordinator owns the shared status item; we report icon/menu changes up.
-    public var onIcon: ((String) -> Void)?
+    /// Icon updates carry a priority so the coordinator can arbitrate between the two
+    /// capabilities (higher wins): 0 = idle, 1 = an active read-aloud session.
+    public var onIcon: ((Int, String) -> Void)?
     public var onMenuRebuild: (() -> Void)?
+
+    private var started = false
 
     /// Whether read-aloud is on at all. When off, ⌃⇧V is unregistered and the Services entry
     /// is inert, so nothing can reach the Accessibility prompt until you turn it on. On by default.
@@ -39,6 +43,8 @@ public final class SpeakController: NSObject {
     /// Wire up the read-aloud capability: the Services entry, the read-along queue,
     /// and the ⌃⇧V hotkey. The status item + menu are owned by the app coordinator.
     public func start() {
+        guard !started else { return } // idempotent: never double-install the handler / hotkey
+        started = true
         SpeakController.shared = self
         setStatusIcon(watching: false)
 
@@ -277,7 +283,7 @@ public final class SpeakController: NSObject {
     }
 
     private func setStatusIcon(watching: Bool) {
-        onIcon?(watching ? "waveform.circle.fill" : "play.bubble")
+        onIcon?(watching ? 1 : 0, watching ? "waveform.circle.fill" : "play.bubble")
     }
 
     // MARK: hotkey (⌃⇧V) via Carbon — no dependencies, works on every macOS.

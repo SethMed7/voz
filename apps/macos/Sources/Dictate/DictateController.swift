@@ -4,8 +4,12 @@ public final class DictateController: NSObject {
     static private(set) var shared: DictateController!
 
     /// The app coordinator owns the shared status item; we report icon/menu changes up.
-    public var onIcon: ((String) -> Void)?
+    /// Icon updates carry a priority so the coordinator can arbitrate between the two
+    /// capabilities (higher wins): 0 = idle, 3 = recording (the mic must never be ambiguous).
+    public var onIcon: ((Int, String) -> Void)?
     public var onMenuRebuild: (() -> Void)?
+
+    private var started = false
 
     /// idle -> listening (key held, recording) -> finishing (transcribe + paste) -> idle
     private enum State { case idle, listening, finishing }
@@ -38,6 +42,8 @@ public final class DictateController: NSObject {
     /// Wire up the dictation capability: the hold-to-talk hotkey and recorder.
     /// The status item + menu are owned by the app coordinator.
     public func start() {
+        guard !started else { return } // idempotent: never double-register the hotkey
+        started = true
         DictateController.shared = self
         updateStatusIcon()
 
@@ -50,7 +56,8 @@ public final class DictateController: NSObject {
     /// recording/processing = mic.fill. (A common complaint in this app class is not knowing
     /// whether it's listening.)
     private func updateStatusIcon() {
-        onIcon?(state == .idle ? "mic" : "mic.fill")
+        // Recording outranks any read-aloud state so the hot mic is never masked.
+        onIcon?(state == .idle ? 0 : 3, state == .idle ? "mic" : "mic.fill")
     }
 
     /// The dictation section of the shared menu. Rebuilt by the coordinator on demand.

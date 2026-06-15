@@ -22,7 +22,17 @@ enum Subprocess {
             p.waitUntilExit()
             done.signal()
         }
-        if done.wait(timeout: .now() + timeout) != .success { p.terminate(); return nil }
+        if done.wait(timeout: .now() + timeout) != .success {
+            // Timed out. SIGTERM first; a tool that ignores it would otherwise be left as an
+            // orphan and the reader above would stay blocked forever. Escalate to SIGKILL, then
+            // wait briefly so the pipe closes, the reader unblocks, and the worker thread is reclaimed.
+            if p.isRunning { p.terminate() }
+            if done.wait(timeout: .now() + 1) != .success {
+                if p.isRunning { kill(p.processIdentifier, SIGKILL) }
+                _ = done.wait(timeout: .now() + 2)
+            }
+            return nil
+        }
         return (p.terminationStatus, data)
     }
 

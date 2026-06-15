@@ -67,7 +67,13 @@ final class BunCleaner: Cleaner {
             done.signal()
         }
         guard done.wait(timeout: .now() + 2) == .success else {
-            p.terminate()
+            // Same escalation as Subprocess.run: SIGTERM, then SIGKILL if it lingers, so a wedged
+            // bun is never orphaned and the reader thread is reclaimed. Then fall back to the Swift port.
+            if p.isRunning { p.terminate() }
+            if done.wait(timeout: .now() + 1) != .success {
+                if p.isRunning { kill(p.processIdentifier, SIGKILL) }
+                _ = done.wait(timeout: .now() + 1)
+            }
             return BasicCleaner.cleaned(raw)
         }
         guard p.terminationStatus == 0 else { return BasicCleaner.cleaned(raw) }

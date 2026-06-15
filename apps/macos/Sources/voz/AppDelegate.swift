@@ -14,13 +14,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let speak = SpeakController()
     private let dictate = DictateController()
 
+    // Each capability reports the icon it wants plus a priority; the higher-priority one owns the
+    // shared status item (so a hot mic is never masked by read-aloud). Both idle → the brand mark.
+    private var speakIcon = (priority: 0, symbol: "waveform")
+    private var dictateIcon = (priority: 0, symbol: "waveform")
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        setIcon("waveform")
+        applyIcon()
 
         // Both capabilities share one menu-bar item; funnel their changes here.
-        speak.onIcon = { [weak self] symbol in self?.setIcon(symbol) }
-        dictate.onIcon = { [weak self] symbol in self?.setIcon(symbol) }
+        speak.onIcon = { [weak self] p, symbol in self?.speakIcon = (p, symbol); self?.applyIcon() }
+        dictate.onIcon = { [weak self] p, symbol in self?.dictateIcon = (p, symbol); self?.applyIcon() }
         speak.onMenuRebuild = { [weak self] in self?.rebuildMenu() }
         dictate.onMenuRebuild = { [weak self] in self?.rebuildMenu() }
 
@@ -29,7 +34,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rebuildMenu()
     }
 
-    private func setIcon(_ symbol: String) {
+    /// Show the highest-priority capability's icon; when both are idle, show the brand mark.
+    private func applyIcon() {
+        let winner = dictateIcon.priority >= speakIcon.priority ? dictateIcon : speakIcon
+        let symbol = winner.priority == 0 ? "waveform" : winner.symbol
         statusItem.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "voz")
     }
 
