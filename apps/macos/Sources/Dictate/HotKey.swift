@@ -23,6 +23,7 @@ final class HotKey {
     private let chord: NSEvent.ModifierFlags = [.control, .function]
 
     func register() {
+        guard globalMonitor == nil, localMonitor == nil else { return } // idempotent: never stack monitors
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
             self?.handle(event)
         }
@@ -30,6 +31,16 @@ final class HotKey {
             self?.handle(event)
             return event
         }
+    }
+
+    /// Tear the monitors down so ⌃+Fn is fully inert (used when dictation is toggled off).
+    /// Clears `active` so a half-held chord can't strand a press across a disable.
+    func unregister() {
+        if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
+        if let localMonitor { NSEvent.removeMonitor(localMonitor) }
+        globalMonitor = nil
+        localMonitor = nil
+        active = false
     }
 
     private func handle(_ event: NSEvent) {

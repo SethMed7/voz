@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Both capabilities share one menu-bar item; funnel their changes here.
         speak.onIcon = { [weak self] symbol in self?.setIcon(symbol) }
         dictate.onIcon = { [weak self] symbol in self?.setIcon(symbol) }
+        speak.onMenuRebuild = { [weak self] in self?.rebuildMenu() }
         dictate.onMenuRebuild = { [weak self] in self?.rebuildMenu() }
 
         speak.start()

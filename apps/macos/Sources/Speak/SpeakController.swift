@@ -4,10 +4,19 @@ import Carbon.HIToolbox
 public final class SpeakController: NSObject {
     static private(set) var shared: SpeakController!
 
-    /// The app coordinator owns the shared status item; we report icon changes up.
+    /// The app coordinator owns the shared status item; we report icon/menu changes up.
     public var onIcon: ((String) -> Void)?
+    public var onMenuRebuild: (() -> Void)?
+
+    /// Whether read-aloud is on at all. When off, ⌃⇧V is unregistered and the Services entry
+    /// is inert, so nothing can reach the Accessibility prompt until you turn it on. On by default.
+    private var speakEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: "speakEnabled") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "speakEnabled") }
+    }
 
     private let services = ServiceProvider()
+    private var handlerInstalled = false
     private var hotKeyRef: EventHotKeyRef?
     private var watchMenuItem: NSMenuItem!
 
@@ -38,13 +47,21 @@ public final class SpeakController: NSObject {
 
         Speaker.shared.onQueueDrained = { [weak self] in self?.handleQueueDrained() }
 
-        registerHotKey()
+        installEventHandler()                       // the dispatch handler is harmless when no hotkey is live
+        if speakEnabled { registerHotKey() }        // off → ⌃⇧V never fires
     }
 
     /// The read-aloud section of the shared menu. Rebuilt by the coordinator on demand.
+    /// The header is the on/off switch for the whole capability; when off it stands alone.
     public func menuItems() -> [NSMenuItem] {
         var items: [NSMenuItem] = []
-        watchMenuItem = NSMenuItem(title: "Read Aloud — Watch Selections  ⌃⇧V", action: #selector(toggleCapture), keyEquivalent: "")
+        let toggle = NSMenuItem(title: "Read aloud — select + ⌃⇧V", action: #selector(toggleEnabled), keyEquivalent: "")
+        toggle.target = self
+        toggle.state = speakEnabled ? .on : .off
+        items.append(toggle)
+        guard speakEnabled else { return items }
+
+        watchMenuItem = NSMenuItem(title: "Watch selections  ⌃⇧V", action: #selector(toggleCapture), keyEquivalent: "")
         watchMenuItem.target = self
         watchMenuItem.state = sessionActive ? .on : .off
         items.append(watchMenuItem)
@@ -74,6 +91,21 @@ public final class SpeakController: NSObject {
         for item in sender.menu?.items ?? [] {
             item.state = (item.representedObject as? String) == id ? .on : .off
         }
+    }
+
+    // MARK: enable / disable the whole capability
+
+    /// Turn read-aloud on or off. Off → stop any session and unregister ⌃⇧V, so the capability
+    /// is fully inert and the Services entry no-ops (see `readOneShot`).
+    @objc private func toggleEnabled() {
+        speakEnabled.toggle()
+        if speakEnabled {
+            registerHotKey()
+        } else {
+            endSessionHard()        // stops watching + speaking, closes the bar, drops the esc hotkey
+            unregisterHotKey()
+        }
+        onMenuRebuild?()
     }
 
     // MARK: capture mode (the ⌃⇧V toggle)
@@ -166,6 +198,7 @@ public final class SpeakController: NSObject {
     // MARK: one-shot reads (Services / menu) — unchanged behavior
 
     func readOneShot(_ text: String) {
+        guard speakEnabled else { return } // disabled capability is inert, incl. the Services entry
         captureMode = false
         sessionActive = false
         removeMonitors()
@@ -249,7 +282,12 @@ public final class SpeakController: NSObject {
 
     // MARK: hotkey (⌃⇧V) via Carbon — no dependencies, works on every macOS.
 
-    private func registerHotKey() {
+    /// Install the single Carbon event handler that dispatches both hotkeys by id. Done once and
+    /// kept for the app's life — it's inert until a hotkey is actually registered, so it's safe to
+    /// install even while read-aloud is off.
+    private func installEventHandler() {
+        guard !handlerInstalled else { return }
+        handlerInstalled = true
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
                                       eventKind: UInt32(kEventHotKeyPressed))
         // One handler serves both hotkeys; dispatch on the registered id.
@@ -265,7 +303,11 @@ public final class SpeakController: NSObject {
             }
             return noErr
         }, 1, &eventType, nil, nil)
+    }
 
+    /// Register ⌃⇧V (the watch toggle). Idempotent; toggled with read-aloud on/off.
+    private func registerHotKey() {
+        guard hotKeyRef == nil else { return }
         let hotKeyID = EventHotKeyID(signature: OSType(0x4C45_4C4F), id: 1) // "LELO"
         RegisterEventHotKey(UInt32(kVK_ANSI_V),
                             UInt32(controlKey | shiftKey),
@@ -273,6 +315,14 @@ public final class SpeakController: NSObject {
                             GetApplicationEventTarget(),
                             0,
                             &hotKeyRef)
+    }
+
+    /// Drop ⌃⇧V so the key is normal again (used when read-aloud is toggled off).
+    private func unregisterHotKey() {
+        if let hotKeyRef {
+            UnregisterEventHotKey(hotKeyRef)
+            self.hotKeyRef = nil
+        }
     }
 
     // While watching, Escape stops watching. A Carbon hotkey (like ⌃⇧V) is used

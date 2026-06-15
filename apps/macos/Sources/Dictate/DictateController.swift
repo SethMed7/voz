@@ -16,6 +16,14 @@ public final class DictateController: NSObject {
 
     public override init() { super.init() }
 
+    /// Whether dictation is on at all. When off, the hold-to-talk hotkey is never registered,
+    /// so ⌃+Fn does nothing and the Microphone / Accessibility prompts are never reached — the
+    /// permission for a capability is only ever asked once you've turned it on. On by default.
+    private var dictateEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: "dictateEnabled") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "dictateEnabled") }
+    }
+
     /// Watch the field after a paste and offer to learn spelling fixes. On by default; toggle in the menu.
     private var learnEnabled: Bool {
         get { UserDefaults.standard.object(forKey: "learnFromEdits") as? Bool ?? true }
@@ -35,7 +43,7 @@ public final class DictateController: NSObject {
 
         HotKey.shared.onPress = { [weak self] in self?.hotKeyPressed() }
         HotKey.shared.onRelease = { [weak self] in self?.hotKeyReleased() }
-        HotKey.shared.register()
+        if dictateEnabled { HotKey.shared.register() } // off → no monitor, no permission prompt
     }
 
     /// Menu-bar glyph reflects state so the mic is never ambiguously "on": idle = mic,
@@ -46,11 +54,16 @@ public final class DictateController: NSObject {
     }
 
     /// The dictation section of the shared menu. Rebuilt by the coordinator on demand.
+    /// The header is the on/off switch for the whole capability; when off it stands alone
+    /// (no engine row, no dictionary) so the menu reads as "this mode is parked".
     public func menuItems() -> [NSMenuItem] {
         var items: [NSMenuItem] = []
-        let info = NSMenuItem(title: "Dictate — hold ⌃ + Fn", action: nil, keyEquivalent: "")
-        info.isEnabled = false
-        items.append(info)
+        let toggle = NSMenuItem(title: "Dictate — hold ⌃ + Fn", action: #selector(toggleEnabled), keyEquivalent: "")
+        toggle.target = self
+        toggle.state = dictateEnabled ? .on : .off
+        items.append(toggle)
+        guard dictateEnabled else { return items }
+
         let engine = NSMenuItem(title: "Engine: \(Transcribers.activeEngineName())", action: nil, keyEquivalent: "")
         engine.isEnabled = false
         items.append(engine)
@@ -65,6 +78,21 @@ public final class DictateController: NSObject {
     }
 
     // MARK: session
+
+    /// Turn the whole capability on or off. Off → unregister the hotkey and tear down any
+    /// in-flight session, so ⌃+Fn is inert and no mic/Accessibility prompt can be reached.
+    @objc private func toggleEnabled() {
+        dictateEnabled.toggle()
+        if dictateEnabled {
+            HotKey.shared.register()
+        } else {
+            HotKey.shared.unregister()
+            state = .idle
+            listener.stop(); LearnPill.shared.close()
+            Overlay.shared.close()
+        }
+        onMenuRebuild?()
+    }
 
     @objc private func toggleLearn() {
         learnEnabled.toggle()
