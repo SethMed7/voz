@@ -11,12 +11,21 @@ struct BasicSwiftCleaner: Cleaner {
     func clean(_ raw: String) -> String { BasicCleaner.cleaned(raw) }
 }
 
-/// Canonical cleaner: the TypeScript helper in ~/.dictado, run by bun with
-/// raw text on stdin and cleaned text on stdout. Any failure or a >2s stall
-/// falls back to BasicCleaner — same rules, so behavior is identical.
+/// Canonical cleaner: the TypeScript helper in ~/.voz, run by bun with raw text
+/// on stdin and cleaned text on stdout. Any failure or a >2s stall falls back to
+/// BasicCleaner — same rules, so behavior is identical.
 final class BunCleaner: Cleaner {
-    private static let helperDir = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".dictado")
+    /// ~/.voz (current) with a fallback to the legacy ~/.dictado, so an existing
+    /// install keeps working. Whichever has clean.ts wins.
+    private static var helperDir: URL {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let voz = home.appendingPathComponent(".voz")
+        let legacy = home.appendingPathComponent(".dictado")
+        let fm = FileManager.default
+        if fm.fileExists(atPath: voz.appendingPathComponent("clean.ts").path) { return voz }
+        if fm.fileExists(atPath: legacy.appendingPathComponent("clean.ts").path) { return legacy }
+        return voz
+    }
 
     static func bunPath() -> String? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path

@@ -258,11 +258,21 @@ final class SystemEngine: NSObject, SpeechEngine, AVSpeechSynthesizerDelegate {
     }
 }
 
-// MARK: - Kokoro voice (optional helper in ~/.leelo, rendered by bun + kokoro-js)
+// MARK: - Kokoro voice (optional helper in ~/.voz/kokoro, rendered by bun + kokoro-js)
 
 final class KokoroEngine: NSObject, SpeechEngine, AVAudioPlayerDelegate {
-    private static let helperDir = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".leelo")
+    /// Where the Kokoro helper lives: ~/.voz/kokoro (current), falling back to the legacy
+    /// ~/.leelo so an existing install keeps working untouched. Whichever actually has the
+    /// helper installed wins; a fresh install lands in ~/.voz/kokoro.
+    private static var helperDir: URL {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let voz = home.appendingPathComponent(".voz/kokoro")
+        let legacy = home.appendingPathComponent(".leelo")
+        let fm = FileManager.default
+        if fm.fileExists(atPath: voz.appendingPathComponent("node_modules/kokoro-js").path) { return voz }
+        if fm.fileExists(atPath: legacy.appendingPathComponent("node_modules/kokoro-js").path) { return legacy }
+        return voz
+    }
 
     static func bunPath() -> String? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
@@ -324,7 +334,8 @@ final class KokoroEngine: NSObject, SpeechEngine, AVAudioPlayerDelegate {
         p.arguments = ["run", "say.ts"]
         p.currentDirectoryURL = Self.helperDir
         var env = ProcessInfo.processInfo.environment
-        env["LEELO_VOICE"] = Speaker.shared.voiceId
+        env["VOZ_VOICE"] = Speaker.shared.voiceId
+        env["LEELO_VOICE"] = Speaker.shared.voiceId // keep a legacy ~/.leelo say.ts working too
         p.environment = env
         let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
         p.standardInput = stdin

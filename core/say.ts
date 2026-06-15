@@ -1,8 +1,8 @@
 /**
- * Leelo's optional premium voice: reads text on stdin, renders it sentence by
+ * voz's premium read-aloud voice: reads text on stdin, renders it sentence by
  * sentence with Kokoro (fully on-device), and prints one WAV path per line as
  * each chunk is ready — the app starts playing after the first line.
- * Installed to ~/.leelo by scripts/setup-kokoro.sh; run with bun.
+ * Installed to ~/.voz/kokoro by scripts/setup-kokoro.sh; run with bun.
  */
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -57,8 +57,8 @@ const tts = await KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0-ONNX
   device: "cpu",
 });
 
-const voice = (process.env.LEELO_VOICE ?? "af_heart") as Parameters<typeof tts.generate>[1] extends { voice?: infer V } ? V : never;
-const dir = mkdtempSync(join(tmpdir(), "leelo-"));
+const voice = (process.env.VOZ_VOICE ?? process.env.LEELO_VOICE ?? "af_heart") as Parameters<typeof tts.generate>[1] extends { voice?: infer V } ? V : never;
+const dir = mkdtempSync(join(tmpdir(), "voz-"));
 let i = 0;
 for (const chunk of chunkText(text)) {
   const audio = await tts.generate(chunk, { voice });

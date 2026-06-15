@@ -66,7 +66,9 @@ final class SherpaTranscriber: Transcriber {
     static func binaryPath() -> String? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         var candidates = [
+            ProcessInfo.processInfo.environment["VOZ_SHERPA_BIN"],
             ProcessInfo.processInfo.environment["DICTADO_SHERPA_BIN"],
+            "\(home)/.voz/sherpa/bin/sherpa-onnx-offline",
             "\(home)/.dictado/sherpa/bin/sherpa-onnx-offline",
             "/opt/homebrew/bin/sherpa-onnx-offline",
             "/usr/local/bin/sherpa-onnx-offline",
@@ -80,7 +82,9 @@ final class SherpaTranscriber: Transcriber {
     static func modelDir() -> String? {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         var candidates = [
+            ProcessInfo.processInfo.environment["VOZ_PARAKEET_MODEL"],
             ProcessInfo.processInfo.environment["DICTADO_PARAKEET_MODEL"],
+            "\(home)/.voz/sherpa/model",
             "\(home)/.dictado/sherpa/model",
         ].compactMap { $0 }
         candidates += matches("\(home)/.cache/sherpa/*parakeet*")

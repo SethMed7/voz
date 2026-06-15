@@ -52,7 +52,7 @@ final class Recorder {
         let maxFrames = AVAudioFramePosition(Self.maxSeconds * sampleRate)
 
         let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("dictado-\(ProcessInfo.processInfo.globallyUniqueString).wav")
+            .appendingPathComponent("voz-\(ProcessInfo.processInfo.globallyUniqueString).wav")
         do {
             file = try AVAudioFile(forWriting: tmp, settings: format.settings)
         } catch {

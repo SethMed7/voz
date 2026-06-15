@@ -1,9 +1,9 @@
 /**
- * dictado's cleanup pass: reads a raw transcript on stdin, prints the cleaned
- * text on stdout. Pure text transforms — no network, no LLM, nothing leaves
- * the machine. Installed to ~/.dictado by scripts/setup-helper.sh; run with bun.
+ * voz's dictation cleanup pass: reads a raw transcript on stdin, prints the
+ * cleaned text on stdout. Pure text transforms — no network, no LLM, nothing
+ * leaves the machine. Installed to ~/.voz by scripts/setup-helper.sh; run with bun.
  *
- * Sources/Dictado/BasicCleaner.swift is the Swift twin — keep the pass order
+ * Sources/Dictate/BasicCleaner.swift is the Swift twin — keep the pass order
  * and rules identical in both files.
  */
 

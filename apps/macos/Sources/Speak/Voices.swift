@@ -1,5 +1,5 @@
 /// Voice catalog: "system" = built-in macOS voice (zero setup); the rest are
-/// Kokoro voice ids, used when the ~/.leelo helper is installed.
+/// Kokoro voice ids, used when the ~/.voz/kokoro helper is installed.
 enum Voices {
     static let all: [(id: String, label: String)] = [
         ("system", "System voice"),

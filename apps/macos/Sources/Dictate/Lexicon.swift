@@ -5,8 +5,9 @@ import Foundation
 /// word when you fix it in place. Keys match case-insensitively on word boundaries; the value is
 /// inserted verbatim, so "myela" → "Myela" fixes both the spelling and the casing.
 ///
-/// Fully local. The file defaults to ~/.dictado/dictionary.json but you can point it anywhere
-/// (dashboard "Choose…", or the DICTADO_DICTIONARY env var) — e.g. into a synced folder you control.
+/// Fully local. The file defaults to ~/.voz/dictionary.json but you can point it anywhere
+/// (dashboard "Choose…", or the VOZ_DICTIONARY env var) — e.g. into a synced folder you control.
+/// An existing ~/.dictado/dictionary.json (or DICTADO_DICTIONARY) is still honored as a fallback.
 final class Lexicon {
     static let shared = Lexicon()
 
@@ -15,15 +16,23 @@ final class Lexicon {
 
     init() { load() }
 
-    /// Resolved dictionary file: DICTADO_DICTIONARY env → saved location → default. Always a file path.
+    /// Resolved dictionary file: VOZ_DICTIONARY/DICTADO_DICTIONARY env → saved location →
+    /// ~/.voz (or an existing ~/.dictado). Always a file path.
     var fileURL: URL {
-        if let env = ProcessInfo.processInfo.environment["DICTADO_DICTIONARY"], !env.isEmpty {
-            return URL(fileURLWithPath: (env as NSString).expandingTildeInPath)
+        for key in ["VOZ_DICTIONARY", "DICTADO_DICTIONARY"] {
+            if let env = ProcessInfo.processInfo.environment[key], !env.isEmpty {
+                return URL(fileURLWithPath: (env as NSString).expandingTildeInPath)
+            }
         }
         if let saved = UserDefaults.standard.string(forKey: "dictionaryPath"), !saved.isEmpty {
             return URL(fileURLWithPath: saved)
         }
-        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".dictado/dictionary.json")
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let voz = home.appendingPathComponent(".voz/dictionary.json")
+        let legacy = home.appendingPathComponent(".dictado/dictionary.json")
+        if FileManager.default.fileExists(atPath: voz.path) { return voz }
+        if FileManager.default.fileExists(atPath: legacy.path) { return legacy } // keep prior dictionary loading
+        return voz // fresh installs write here
     }
 
     func load() {
