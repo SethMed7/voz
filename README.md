@@ -1,6 +1,6 @@
 <div align="center">
 
-# voz
+<img src="apps/macos/media/banner.png" alt="voz" width="640">
 
 **the voice layer for your Mac — speak to type, select to hear. 100% on-device.**
 
