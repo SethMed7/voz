@@ -19,7 +19,7 @@ final class Overlay {
 
     // MARK: states
 
-    /// Recording — a pulsing dusk-blue dot. Stays up for the whole hold,
+    /// Recording — a pulsing jade dot. Stays up for the whole hold,
     /// through any pause (silence is not a stop). No words, ever.
     func showListening() {
         present(status: "listening", statusColor: muted, pulsing: true)

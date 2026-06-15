@@ -94,7 +94,7 @@ public final class SpeakController: NSObject {
         cancelIdleClose()
         Speaker.shared.stop()
         setStatusIcon(watching: true)
-        watchMenuItem.state = .on
+        watchMenuItem?.state = .on
         Overlay.shared.present(watching: true)
         Overlay.shared.center() // always start bottom-center
         Overlay.shared.clearTranscript(placeholder: "Highlight text anywhere — voz reads each selection in order and follows along word by word.")
@@ -110,7 +110,7 @@ public final class SpeakController: NSObject {
         captureMode = false
         removeMonitors()
         setStatusIcon(watching: false)
-        watchMenuItem.state = .off
+        watchMenuItem?.state = .off
         Overlay.shared.setWatching(false)
         if !Speaker.shared.isActive && Speaker.shared.pending == 0 {
             endSessionSoft()
@@ -294,14 +294,14 @@ public final class SpeakController: NSObject {
     }
 }
 
-/// Right-click → Services → "Read Aloud with Leelo". Receives the selection
+/// Right-click → Services → "Read Aloud with voz". Receives the selection
 /// as plain text via the pasteboard — images in a selection simply don't
 /// arrive, so they're skipped by construction.
 final class ServiceProvider: NSObject {
     @objc func readAloud(_ pboard: NSPasteboard, userData: String, error: AutoreleasingUnsafeMutablePointer<NSString>) {
         guard let text = pboard.string(forType: .string),
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            error.pointee = "Leelo: no text in selection" as NSString
+            error.pointee = "voz: no text in selection" as NSString
             return
         }
         DispatchQueue.main.async {

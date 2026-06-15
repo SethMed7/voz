@@ -73,6 +73,12 @@ final class Overlay {
     func close() {
         closeWork?.cancel(); closeWork = nil
         waveform?.setActive(false)
+        // The expanded build registers a boundsDidChange observer on the scroll
+        // view's contentView; drop it so rebuilds don't accumulate stale entries
+        // on this singleton.
+        if let cv = scrollView?.contentView {
+            NotificationCenter.default.removeObserver(self, name: NSView.boundsDidChangeNotification, object: cv)
+        }
         panel?.orderOut(nil)
         panel = nil
         mode = .mini // next session starts minimized again

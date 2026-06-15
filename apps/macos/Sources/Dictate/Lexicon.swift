@@ -11,7 +11,7 @@ final class Lexicon {
     static let shared = Lexicon()
 
     private(set) var corrections: [String: String] = [:] // lowercased-from -> verbatim-to
-    private let comment = "Map a misspelling (lowercase) to the spelling you want — e.g. \"myayla\": \"Myela\". dictado applies these to every dictation, and adds to them when you correct a word."
+    private let comment = "Map a misspelling (lowercase) to the spelling you want — e.g. \"myayla\": \"Myela\". voz applies these to every dictation, and adds to them when you correct a word."
 
     init() { load() }
 

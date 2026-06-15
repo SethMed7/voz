@@ -37,7 +37,7 @@ final class Dashboard: NSObject, NSWindowDelegate {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 560),
                          styleMask: [.titled, .closable, .miniaturizable, .resizable],
                          backing: .buffered, defer: false)
-        w.title = "dictado"
+        w.title = "voz — Dictionary"
         w.titlebarAppearsTransparent = true
         w.appearance = NSAppearance(named: .darkAqua)
         w.isReleasedWhenClosed = false
@@ -123,7 +123,7 @@ final class Dashboard: NSObject, NSWindowDelegate {
         let entries = Lexicon.shared.corrections.sorted { $0.key < $1.key }
         sortedKeys = entries.map { $0.key }
         if entries.isEmpty {
-            listStack.addArrangedSubview(text("No words yet — add one above, or dictado will offer to learn them as you correct.", 12, .regular, muted))
+            listStack.addArrangedSubview(text("No words yet — add one above, or voz will offer to learn them as you correct.", 12, .regular, muted))
             return
         }
         for (i, e) in entries.enumerated() {
