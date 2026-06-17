@@ -49,7 +49,8 @@ final class BunCleaner: Cleaner {
         let stdin = Pipe(), stdout = Pipe()
         p.standardInput = stdin
         p.standardOutput = stdout
-        p.standardError = Pipe()
+        p.standardError = FileHandle.nullDevice // discard stderr so a chatty helper can't fill a pipe and wedge
+        defer { try? stdin.fileHandleForWriting.close() } // ensure the write end is released on every path
 
         do {
             try p.run()
@@ -85,8 +86,32 @@ final class BunCleaner: Cleaner {
 }
 
 enum Cleaners {
-    /// Helper installed -> canonical TS cleaner, else the Swift port.
-    static func best() -> Cleaner {
-        BunCleaner.isAvailable() ? BunCleaner() : BasicSwiftCleaner()
+    /// The on-device "polish with AI" toggle. On by default, but it only does
+    /// anything once an open-weight model is installed (scripts/setup-cleaner.sh);
+    /// until then `best()` returns the deterministic cleaner regardless.
+    static var llmEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: "llmCleanupEnabled") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "llmCleanupEnabled") }
+    }
+
+    /// Best available cleaner. With the AI layer on, the on-device LLM polishes the
+    /// text (always wrapping the deterministic cleaner as its fallback): a local
+    /// Ollama you already run is preferred (warm, shared with your other tools),
+    /// else a self-contained llama.cpp model. Otherwise: helper installed ->
+    /// canonical TS cleaner, else the Swift port.
+    ///
+    /// NOTE: probes the network/disk, so call OFF the main thread.
+    static func best() -> Cleaner { select(useLLM: llmEnabled) }
+
+    /// Like `best()`, but skips the LLM entirely when `raw` is already clean — saving the polish
+    /// latency on dictations that don't need it. Use this on the live paste path.
+    static func best(for raw: String) -> Cleaner { select(useLLM: llmEnabled && LLMPolish.worthRunning(raw)) }
+
+    private static func select(useLLM: Bool) -> Cleaner {
+        let base: Cleaner = BunCleaner.isAvailable() ? BunCleaner() : BasicSwiftCleaner()
+        guard useLLM else { return base }
+        if OllamaCleaner.isInstalled() { return OllamaCleaner(fallback: base) }  // warm, shared (e.g. Breve)
+        if LLMCleaner.isAvailable() { return LLMCleaner(fallback: base) }        // self-contained llama.cpp
+        return base
     }
 }

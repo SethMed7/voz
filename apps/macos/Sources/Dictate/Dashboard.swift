@@ -17,6 +17,9 @@ final class Dashboard: NSObject, NSWindowDelegate {
     private var engineLabel: NSTextField!
     private var sortedKeys: [String] = []
     private var sortedPronKeys: [String] = []
+    private var sortedPendingKeys: [String] = []
+    private var thresholdStepper: NSStepper!
+    private var thresholdLabel: NSTextField!
 
     private var learnEnabled: (() -> Bool)?
     private var toggleLearn: (() -> Void)?
@@ -70,6 +73,15 @@ final class Dashboard: NSObject, NSWindowDelegate {
         learnCheck.contentTintColor = ink
         let setRow = hrow([engineLabel, flexSpacer(), learnCheck])
 
+        thresholdStepper = NSStepper()
+        thresholdStepper.minValue = 1; thresholdStepper.maxValue = 9
+        thresholdStepper.integerValue = Lexicon.shared.learnThreshold
+        thresholdStepper.valueWraps = false
+        thresholdStepper.target = self; thresholdStepper.action = #selector(thresholdChanged)
+        thresholdLabel = text("\(Lexicon.shared.learnThreshold)", 13, .semibold, ink)
+        let learnRow = hrow([text("Learn a fix after", 12, .regular, muted), thresholdStepper, thresholdLabel,
+                             text("correction(s)", 12, .regular, muted), flexSpacer()])
+
         fromField = inputField("misspelling")
         toField = inputField("correct spelling")
         let addRow = hrow([text("Fix", 12, .regular, muted), fromField, text("→", 13, .regular, muted), toField, button("Add", #selector(addTapped))])
@@ -97,7 +109,7 @@ final class Dashboard: NSObject, NSWindowDelegate {
             listStack.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
         ])
 
-        for row in [locRow, setRow, addRow, pronRow, scroll] { root.addArrangedSubview(row) }
+        for row in [locRow, setRow, learnRow, addRow, pronRow, scroll] { root.addArrangedSubview(row) }
 
         let container = NSView()
         container.wantsLayer = true
@@ -111,6 +123,7 @@ final class Dashboard: NSObject, NSWindowDelegate {
             // Rows + list span the full content width.
             locRow.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -40),
             setRow.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -40),
+            learnRow.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -40),
             addRow.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -40),
             pronRow.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -40),
             scroll.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -40),
@@ -134,10 +147,28 @@ final class Dashboard: NSObject, NSWindowDelegate {
         let entries = Lexicon.shared.corrections.sorted { $0.key < $1.key }
         sortedKeys = entries.map { $0.key }
         if entries.isEmpty {
-            listStack.addArrangedSubview(text("No corrections yet — add one above, or voz will offer to learn them as you correct.", 12, .regular, muted))
+            listStack.addArrangedSubview(text("No corrections yet — add one above, or voz learns them after you make the same fix \(Lexicon.shared.learnThreshold)×.", 12, .regular, muted))
         } else {
             for (i, e) in entries.enumerated() {
                 let r = hrow([text("\(e.key)  →  \(e.value)", 13, .regular, ink), flexSpacer(), removeButton(tag: i, #selector(removeTapped))])
+                r.widthAnchor.constraint(equalTo: listStack.widthAnchor).isActive = true
+                listStack.addArrangedSubview(r)
+            }
+        }
+
+        // Learning (pending): in-place fixes seen but not yet promoted to a rule, with their tally.
+        listStack.addArrangedSubview(spacer(10))
+        listStack.addArrangedSubview(sectionHeader("Learning — fixes seen, not yet rules"))
+        let pend = Lexicon.shared.pending.sorted { $0.key < $1.key }
+        sortedPendingKeys = pend.map { $0.key }
+        if pend.isEmpty {
+            listStack.addArrangedSubview(text("Nothing pending — correct a word in place and voz starts counting.", 12, .regular, muted))
+        } else {
+            for (i, e) in pend.enumerated() {
+                let froms = e.value.froms.sorted().joined(separator: ", ")
+                var line = "\(e.value.to)   (\(e.value.count) of \(Lexicon.shared.learnThreshold))"
+                if !froms.isEmpty { line += "   ← \(froms)" }
+                let r = hrow([text(line, 13, .regular, ink), flexSpacer(), removeButton(tag: i, #selector(removePendingTapped))])
                 r.widthAnchor.constraint(equalTo: listStack.widthAnchor).isActive = true
                 listStack.addArrangedSubview(r)
             }
@@ -189,6 +220,18 @@ final class Dashboard: NSObject, NSWindowDelegate {
         guard sender.tag >= 0, sender.tag < sortedPronKeys.count else { return }
         Lexicon.shared.forgetPronunciation(sortedPronKeys[sender.tag])
         refresh()
+    }
+
+    @objc private func removePendingTapped(_ sender: NSButton) {
+        guard sender.tag >= 0, sender.tag < sortedPendingKeys.count else { return }
+        Lexicon.shared.forgetPending(sortedPendingKeys[sender.tag])
+        refresh()
+    }
+
+    @objc private func thresholdChanged() {
+        Lexicon.shared.learnThreshold = thresholdStepper.integerValue
+        thresholdLabel.stringValue = "\(thresholdStepper.integerValue)"
+        refresh() // hint text references the threshold
     }
 
     @objc private func choose() {

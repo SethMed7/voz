@@ -21,7 +21,7 @@ public final class DictateController: NSObject {
     public override init() { super.init() }
 
     /// Whether dictation is on at all. When off, the hold-to-talk hotkey is never registered,
-    /// so ⌃+Fn does nothing and the Microphone / Accessibility prompts are never reached — the
+    /// so ⌃⌥ does nothing and the Microphone / Accessibility prompts are never reached — the
     /// permission for a capability is only ever asked once you've turned it on. On by default.
     private var dictateEnabled: Bool {
         get { UserDefaults.standard.object(forKey: "dictateEnabled") as? Bool ?? true }
@@ -52,6 +52,9 @@ public final class DictateController: NSObject {
         if dictateEnabled { HotKey.shared.register() } // off → no monitor, no permission prompt
     }
 
+    /// Tear down background helpers (the warm ASR server) when the app quits.
+    public func shutdown() { WarmASR.shared.shutdown() }
+
     /// Menu-bar glyph reflects state so the mic is never ambiguously "on": idle = mic,
     /// recording/processing = mic.fill. (A common complaint in this app class is not knowing
     /// whether it's listening.)
@@ -65,7 +68,7 @@ public final class DictateController: NSObject {
     /// (no engine row, no dictionary) so the menu reads as "this mode is parked".
     public func menuItems() -> [NSMenuItem] {
         var items: [NSMenuItem] = []
-        let toggle = NSMenuItem(title: "Dictate — hold ⌃ + Fn", action: #selector(toggleEnabled), keyEquivalent: "")
+        let toggle = NSMenuItem(title: "Dictate — hold ⌃ + ⌥ to record", action: #selector(toggleEnabled), keyEquivalent: "")
         toggle.target = self
         toggle.state = dictateEnabled ? .on : .off
         items.append(toggle)
@@ -74,6 +77,12 @@ public final class DictateController: NSObject {
         let engine = NSMenuItem(title: "Engine: \(Transcribers.activeEngineName())", action: nil, keyEquivalent: "")
         engine.isEnabled = false
         items.append(engine)
+        if OllamaCleaner.isInstalled() || LLMCleaner.isAvailable() {
+            let ai = NSMenuItem(title: "Polish with AI (on-device)", action: #selector(toggleLLM), keyEquivalent: "")
+            ai.target = self
+            ai.state = Cleaners.llmEnabled ? .on : .off
+            items.append(ai)
+        }
         let learn = NSMenuItem(title: "Learn from edits", action: #selector(toggleLearn), keyEquivalent: "")
         learn.target = self
         learn.state = learnEnabled ? .on : .off
@@ -87,7 +96,7 @@ public final class DictateController: NSObject {
     // MARK: session
 
     /// Turn the whole capability on or off. Off → unregister the hotkey and tear down any
-    /// in-flight session, so ⌃+Fn is inert and no mic/Accessibility prompt can be reached.
+    /// in-flight session, so ⌃⌥ is inert and no mic/Accessibility prompt can be reached.
     @objc private func toggleEnabled() {
         dictateEnabled.toggle()
         if dictateEnabled {
@@ -99,6 +108,11 @@ public final class DictateController: NSObject {
             Overlay.shared.close()
         }
         onMenuRebuild?()
+    }
+
+    @objc private func toggleLLM() {
+        Cleaners.llmEnabled.toggle()
+        onMenuRebuild?() // refresh the checkmark in the shared menu
     }
 
     @objc private func toggleLearn() {
@@ -118,6 +132,13 @@ public final class DictateController: NSObject {
         listener.stop(); LearnPill.shared.close() // a new dictation supersedes any pending learn prompt
         state = .listening
         Overlay.shared.showListening()
+        // Warm the engines now so their load overlaps with you speaking, not the paste path:
+        // the warm Parakeet ASR server and the LLM polish model.
+        DispatchQueue.global(qos: .utility).async {
+            WarmASR.shared.ensureRunning()
+            if Cleaners.llmEnabled, OllamaCleaner.isInstalled() { OllamaCleaner.warm() }
+        }
+        recorder.onLevel = { Overlay.shared.updateLevel($0) }
         recorder.start(onError: { [weak self] message in
             self?.state = .idle
             Overlay.shared.flash(message: message)
@@ -163,8 +184,8 @@ public final class DictateController: NSObject {
                 Overlay.shared.flash(message: "nothing heard")
                 return
             }
-            let cleaner = Cleaners.best()
-            DispatchQueue.global(qos: .utility).async { // bun cleaner may block ~2s
+            DispatchQueue.global(qos: .utility).async { // LLM / bun cleaner may block
+                let cleaner = Cleaners.best(for: trimmed) // skips the LLM when already clean; off main
                 let cleaned = Lexicon.shared.apply(cleaner.clean(trimmed)) // cleanup, then your dictionary
                 DispatchQueue.main.async { self.deliver(cleaned) }
             }
@@ -195,11 +216,24 @@ public final class DictateController: NSObject {
         guard learnEnabled else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self, self.state == .idle else { return }
-            self.listener.start(pasted: pasted) { from, to in
-                LearnPill.shared.show(from: from, to: to) {
-                    Lexicon.shared.learn(from: from, to: to)
-                    // Confirm in the same spot, with a Remove to undo on the spot.
-                    LearnPill.shared.showAdded(word: to) { Lexicon.shared.forget(from) }
+            let watching = self.listener.start(pasted: pasted) { from, to in
+                // Frequency-gated: each in-place fix is tallied; a word only becomes a
+                // permanent rule once you've corrected it the same way enough times.
+                switch Lexicon.shared.recordCorrection(from: from, to: to) {
+                case .promoted(let word):
+                    LearnPill.shared.showAdded(word: word) { Lexicon.shared.forgetTarget(word) }
+                case .pending(let word, let count, let threshold):
+                    LearnPill.shared.showProgress(word: word, count: count, of: threshold)
+                case .ignored:
+                    break
+                }
+            }
+            // If voz can't read this app's text (most browsers/Electron apps), it can't learn edits
+            // here — say so once so it isn't silently mysterious. Native fields (Notes, TextEdit…) work.
+            if !watching, !UserDefaults.standard.bool(forKey: "warnedNoWatch") {
+                UserDefaults.standard.set(true, forKey: "warnedNoWatch")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                    LearnPill.shared.showNote("voz can’t watch this app to learn edits")
                 }
             }
         }

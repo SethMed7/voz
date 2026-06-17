@@ -13,6 +13,29 @@ final class Lexicon {
 
     private(set) var corrections: [String: String] = [:]    // lowercased-from -> verbatim-to (dictation)
     private(set) var pronunciations: [String: String] = [:] // lowercased-word -> "say it like" respelling (read-aloud)
+
+    /// Candidate fixes grouped by the TARGET word you want (keyed by its lowercase) — e.g. every way
+    /// the engine mis-hears "Dhaval" ("devil", "duval", …) collects under "dhaval". Once you've
+    /// corrected toward that target `learnThreshold` times (across any spelling), all those
+    /// mis-hearings are promoted to real rules at once. Counting by target — not by each mis-hearing —
+    /// is what makes a name stick even when the recognizer hears it differently each time.
+    private(set) var pending: [String: PendingTarget] = [:]
+
+    struct PendingTarget { var to: String; var froms: Set<String>; var count: Int }
+
+    /// How many times you must make the same in-place fix before voz adds it as a rule. Default 2;
+    /// set it in the Dictionary window. So "Deval"→"Dhaval" becomes a rule on the 2nd time you fix it.
+    var learnThreshold: Int {
+        get { max(1, UserDefaults.standard.object(forKey: "learnThreshold") as? Int ?? 2) }
+        set { UserDefaults.standard.set(max(1, newValue), forKey: "learnThreshold") }
+    }
+
+    enum LearnOutcome {
+        case promoted(to: String)                            // crossed the threshold → now a rule
+        case pending(to: String, count: Int, threshold: Int) // tallied, not yet a rule
+        case ignored                                         // nothing to learn
+    }
+
     private let comment = "corrections: map a misspelling (lowercase) to the spelling you want — e.g. \"myayla\": \"Myela\"; voz applies these to every dictation. pronunciations: map a word (lowercase) to how read-aloud should say it — e.g. \"myela\": \"my-ell-uh\"."
 
     init() { load() }
@@ -37,7 +60,7 @@ final class Lexicon {
     }
 
     func load() {
-        corrections = [:]; pronunciations = [:]
+        corrections = [:]; pronunciations = [:]; pending = [:]
         guard let data = try? Data(contentsOf: fileURL),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
         if let c = obj["corrections"] as? [String: String] {
@@ -45,6 +68,14 @@ final class Lexicon {
         }
         if let p = obj["pronunciations"] as? [String: String] {
             for (k, v) in p where !k.isEmpty && !v.isEmpty { pronunciations[k.lowercased()] = v }
+        }
+        if let pend = obj["pending"] as? [String: [String: Any]] {
+            for (k, v) in pend {
+                guard !k.isEmpty, let to = v["to"] as? String, !to.isEmpty,
+                      let count = v["count"] as? Int, count > 0 else { continue }
+                let froms = Set((v["froms"] as? [String] ?? []).map { $0.lowercased() }.filter { !$0.isEmpty })
+                pending[k.lowercased()] = PendingTarget(to: to, froms: froms, count: count)
+            }
         }
     }
 
@@ -62,17 +93,61 @@ final class Lexicon {
         return result
     }
 
-    /// Add/record a correction (from → to) and persist. No-op for a casing-only or empty change.
+    /// Add/record a correction (from → to) and persist immediately — the dashboard's manual "Add",
+    /// which is an explicit rule, so it skips the frequency gate. No-op for a casing-only or empty
+    /// change. Clears any pending tally toward the same target.
     func learn(from: String, to: String) {
         let key = from.lowercased()
         guard !key.isEmpty, !to.isEmpty, key != to.lowercased() else { return }
         corrections[key] = to
+        pending.removeValue(forKey: to.lowercased())
         save()
     }
 
-    /// Remove a correction by its "from" key.
+    /// Record an in-place fix you made (from → to), frequency-gated and grouped by target. Each
+    /// correction toward the same target word counts up — across however many ways the recognizer
+    /// mis-heard it — and once the count reaches `learnThreshold`, every mis-hearing seen is promoted
+    /// to a real rule at once.
+    func recordCorrection(from: String, to: String) -> LearnOutcome {
+        let fromKey = from.lowercased()
+        let target = to.trimmingCharacters(in: .whitespaces)
+        let targetKey = target.lowercased()
+        guard !fromKey.isEmpty, !target.isEmpty, fromKey != targetKey else { return .ignored }
+        if corrections[fromKey]?.lowercased() == targetKey { return .ignored } // this mapping is already a rule
+
+        let threshold = learnThreshold
+        var p = pending[targetKey] ?? PendingTarget(to: target, froms: [], count: 0)
+        p.to = target              // keep the latest casing you typed
+        p.froms.insert(fromKey)
+        p.count += 1
+
+        if p.count >= threshold {
+            for f in p.froms { corrections[f] = p.to }
+            pending.removeValue(forKey: targetKey)
+            save()
+            return .promoted(to: p.to)
+        }
+        pending[targetKey] = p
+        save()
+        return .pending(to: p.to, count: p.count, threshold: threshold)
+    }
+
+    /// Remove a single correction rule by its "from" key (the dashboard's Corrections list).
     func forget(_ from: String) {
         guard corrections.removeValue(forKey: from.lowercased()) != nil else { return }
+        save()
+    }
+
+    /// Undo a just-learned target: drop every correction rule that maps to it (the "Saved" pill's Remove).
+    func forgetTarget(_ to: String) {
+        let before = corrections.count
+        corrections = corrections.filter { $0.value.lowercased() != to.lowercased() }
+        if corrections.count != before { save() }
+    }
+
+    /// Drop a not-yet-promoted candidate by its target key (the dashboard's "Learning" list).
+    func forgetPending(_ targetKey: String) {
+        guard pending.removeValue(forKey: targetKey.lowercased()) != nil else { return }
         save()
     }
 
@@ -120,7 +195,10 @@ final class Lexicon {
     }
 
     private func save() {
-        let obj: [String: Any] = ["_comment": comment, "corrections": corrections, "pronunciations": pronunciations]
+        var pendingObj: [String: [String: Any]] = [:]
+        for (k, v) in pending { pendingObj[k] = ["to": v.to, "count": v.count, "froms": Array(v.froms).sorted()] }
+        let obj: [String: Any] = ["_comment": comment, "corrections": corrections,
+                                  "pronunciations": pronunciations, "pending": pendingObj]
         try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         if let data = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]) {
             try? data.write(to: fileURL)

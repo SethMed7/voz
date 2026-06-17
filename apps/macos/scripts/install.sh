@@ -12,5 +12,5 @@ ditto build/voz.app /Applications/voz.app
 open /Applications/voz.app
 echo "Installed and launched /Applications/voz.app"
 echo "Each capability prompts only for what it needs the first time you use it:"
-echo "  • Read aloud (⌃⇧V): Accessibility (to read your selection)"
-echo "  • Dictate (hold ⌃+Fn): Microphone + Accessibility (to type the result)"
+echo "  • Read aloud (⌃V): Accessibility (to read your selection)"
+echo "  • Dictate (hold ⌃+⌥): Microphone + Accessibility (to type the result)"

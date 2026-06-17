@@ -3,8 +3,8 @@ import Speak
 import Dictate
 
 /// voz — the voice layer for your Mac. One menu-bar app, two capabilities:
-///   • Dictate — hold ⌃+Fn, speak, release; the cleaned text is typed where your cursor is.
-///   • Read aloud — select text anywhere, press ⌃⇧V; voz reads it and follows along.
+///   • Dictate — hold ⌃⌥, speak, release; the cleaned text is typed where your cursor is.
+///   • Read aloud — select text anywhere, press ⌃V; voz reads it and follows along.
 ///
 /// Each capability is a self-contained controller from its own module. The app owns the
 /// single shared status item and routes each capability's icon/menu updates through here,
@@ -32,6 +32,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         speak.start()
         dictate.start()
         rebuildMenu()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        dictate.shutdown() // stop the warm ASR server we may have spawned
     }
 
     /// Show the highest-priority capability's icon; when both are idle, show the brand mark.

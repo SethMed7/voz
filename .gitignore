@@ -3,3 +3,4 @@
 build/
 *.icns
 node_modules/
+log.txt

@@ -1,11 +1,12 @@
 import AppKit
 
-/// Global hold-to-talk hotkey (⌃ + Fn) via NSEvent flag monitoring.
+/// Global hold-to-talk hotkey (⌃ + ⌥) via NSEvent flag monitoring.
 ///
-/// The Fn (🌐) key is NOT a Carbon modifier, so `RegisterEventHotKey` can't see
-/// it — we watch `flagsChanged` events instead. Since this is hold-to-talk we
-/// need BOTH edges: fire `onPress` the moment Control AND Fn are both down, and
-/// `onRelease` the moment either lifts. A global monitor catches keys while
+/// The chord is modifier-only, so `RegisterEventHotKey` (which wants a real key)
+/// is a poor fit — we watch `flagsChanged` events instead. Since this is
+/// hold-to-talk we need BOTH edges: fire `onPress` the moment Control AND Option
+/// are both down, and `onRelease` the moment either lifts. Order is irrelevant —
+/// the chord arms as soon as both are held. A global monitor catches keys while
 /// other apps are focused (the normal case); a local monitor covers our own
 /// windows. Global keyboard monitoring needs Accessibility/Input-Monitoring
 /// permission, which the app already requires to paste.
@@ -19,8 +20,8 @@ final class HotKey {
     private var localMonitor: Any?
     private var active = false
 
-    /// Both must be held to arm. Fn shows up as `.function`.
-    private let chord: NSEvent.ModifierFlags = [.control, .function]
+    /// Both must be held to arm, in any order. Option shows up as `.option`.
+    private let chord: NSEvent.ModifierFlags = [.control, .option]
 
     func register() {
         guard globalMonitor == nil, localMonitor == nil else { return } // idempotent: never stack monitors
@@ -33,7 +34,7 @@ final class HotKey {
         }
     }
 
-    /// Tear the monitors down so ⌃+Fn is fully inert (used when dictation is toggled off).
+    /// Tear the monitors down so ⌃⌥ is fully inert (used when dictation is toggled off).
     /// Clears `active` so a half-held chord can't strand a press across a disable.
     func unregister() {
         if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }

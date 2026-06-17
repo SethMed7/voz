@@ -9,11 +9,15 @@ enum Paster {
     /// clipboard (unrestored) so the user can paste it themselves.
     @discardableResult
     static func paste(_ text: String) -> Bool {
+        // Normalize stray leading/trailing whitespace (a dictionary value or LLM edge case can
+        // re-introduce it after the cleaners trimmed); internal newlines from a spoken "new line"
+        // command are preserved.
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let pb = NSPasteboard.general
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         guard AXIsProcessTrustedWithOptions(options) else {
             pb.clearContents()
-            pb.setString(text, forType: .string)
+            pb.setString(clean, forType: .string)
             return false
         }
 
@@ -26,8 +30,8 @@ enum Paster {
         }
 
         pb.clearContents()
-        pb.setString(text, forType: .string)
-        postCmdV()
+        pb.setString(clean, forType: .string)
+        guard postCmdV() else { return false } // couldn't synthesize ⌘V — leave text on the clipboard
 
         // Restore whatever the user had on the clipboard once ⌘V has landed.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -42,13 +46,19 @@ enum Paster {
         return true
     }
 
-    private static func postCmdV() {
+    /// Synthesize ⌘V. Returns false if the events can't be created (so the caller can leave the text
+    /// on the clipboard rather than silently doing nothing).
+    @discardableResult
+    private static func postCmdV() -> Bool {
         let source = CGEventSource(stateID: .combinedSessionState)
-        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true)
-        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false)
-        keyDown?.flags = .maskCommand
-        keyUp?.flags = .maskCommand
-        keyDown?.post(tap: .cghidEventTap)
-        keyUp?.post(tap: .cghidEventTap)
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false) else {
+            return false
+        }
+        keyDown.flags = .maskCommand
+        keyUp.flags = .maskCommand
+        keyDown.post(tap: .cghidEventTap)
+        keyUp.post(tap: .cghidEventTap)
+        return true
     }
 }

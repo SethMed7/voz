@@ -1,155 +1,205 @@
 import AppKit
 
-/// The bottom-centered indicator shown while dictating. It is a pure STATE
-/// indicator — it never shows your words (you don't need to watch them) — but it
-/// always makes the mic state unambiguous: a pulsing dot while recording, a
-/// brief "thinking" while transcribing, then "typed". Non-activating, so focus
-/// stays in the app receiving the dictation.
+/// The small, bottom-centered dictation indicator. Recording shows ONLY a live jade waveform that
+/// moves with your voice — no text, no wordmark. On release the waveform goes flat and a spinner
+/// appears to its right (processing); then it closes as the text pastes. Error/clipboard states use
+/// a tiny text pill. Non-activating, so focus stays in the app you're dictating into.
 final class Overlay {
     static let shared = Overlay()
 
     private var panel: NSPanel?
-    private var dotLayer: CALayer?
+    private var waveformView: MicWaveformView?
+    private var spinner: NSProgressIndicator?
+    private var autoCloseWork: DispatchWorkItem?
 
     private let ink = NSColor(srgbRed: 0.93, green: 0.94, blue: 0.96, alpha: 1)
-    private let iris = NSColor(srgbRed: 0x6E / 255.0, green: 0x56 / 255.0, blue: 0xE8 / 255.0, alpha: 1)
     private let jade = NSColor(srgbRed: 0x22 / 255.0, green: 0xC7 / 255.0, blue: 0xA9 / 255.0, alpha: 1)
     private let muted = NSColor(srgbRed: 0.62, green: 0.66, blue: 0.72, alpha: 1)
     private let bg = NSColor(srgbRed: 0x16 / 255.0, green: 0x16 / 255.0, blue: 0x16 / 255.0, alpha: 0.97)
+    private let stroke = NSColor(srgbRed: 0.21, green: 0.22, blue: 0.24, alpha: 1)
+
+    private let pillHeight: CGFloat = 32
+    private let waveSize = CGSize(width: 64, height: 20)
 
     // MARK: states
 
-    /// Recording — a pulsing jade dot. Stays up for the whole hold,
-    /// through any pause (silence is not a stop). No words, ever.
-    func showListening() {
-        present(status: "listening", statusColor: muted, pulsing: true)
-    }
+    /// Recording — a small rounded pill that is just the live waveform, reacting to your voice.
+    func showListening() { mountWave(processing: false) }
 
-    /// Transcribing the clip after release (usually well under a second).
-    func showThinking() {
-        present(status: "thinking", statusColor: muted, pulsing: false)
-    }
+    /// Feed the live mic level (0…1) to the recording waveform. No-op otherwise.
+    func updateLevel(_ level: Float) { waveformView?.setLevel(CGFloat(level)) }
 
-    /// Pasted into the focused app — the text is already there, so just confirm.
-    func showTyped() {
-        present(status: "typed", statusColor: iris, pulsing: false)
-        autoClose(after: 1.0)
-    }
+    /// Released — the waveform goes flat and a spinner spins on the right while we transcribe + polish.
+    func showThinking() { mountWave(processing: true) }
 
-    /// Accessibility denied: text is on the clipboard, so echo it (head) so the
-    /// user can confirm what was captured before pasting manually.
+    /// Pasted — the text in your app is its own confirmation, so just dismiss.
+    func showTyped() { autoClose(after: 0.2) }
+
+    /// Accessibility denied: text is on the clipboard. Tell the user to paste it.
     func showCopied(_ text: String) {
-        present(status: "copied · ⌘V to paste", statusColor: iris, pulsing: false, detail: oneLine(text))
+        presentText("⌘V to paste", detail: oneLine(text))
         autoClose(after: 3.0)
     }
 
     func flash(message: String) {
-        present(status: message, statusColor: muted, pulsing: false)
+        presentText(message, detail: nil)
         autoClose(after: 1.4)
     }
 
     func close() {
-        panel?.orderOut(nil)
-        panel = nil
-        dotLayer = nil
+        autoCloseWork?.cancel(); autoCloseWork = nil
+        spinner?.stopAnimation(nil); spinner = nil
+        panel?.orderOut(nil); panel = nil
+        waveformView = nil
     }
 
-    // MARK: rendering
+    // MARK: waveform pill (recording → processing)
 
-    private func autoClose(after seconds: TimeInterval) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in self?.close() }
-    }
+    private func mountWave(processing: Bool) {
+        autoCloseWork?.cancel(); autoCloseWork = nil
 
-    private func present(status: String, statusColor: NSColor, pulsing: Bool, detail: String? = nil) {
-        close()
+        // Recording starts a fresh waveform; processing reuses it so it eases flat with continuity.
+        let wf: MicWaveformView
+        if processing, let existing = waveformView {
+            wf = existing
+            wf.goFlat()
+        } else {
+            wf = MicWaveformView(bars: 7)
+            wf.barColor = jade
+        }
+        wf.translatesAutoresizingMaskIntoConstraints = false
+        wf.removeFromSuperview()
+        waveformView = wf
 
-        let height: CGFloat = 44
-        let hasDetail = detail != nil && !(detail!.isEmpty)
-        let width: CGFloat = hasDetail ? 560 : 240
-
-        let content = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
-        content.wantsLayer = true
-        content.layer?.backgroundColor = bg.cgColor
-        content.layer?.cornerRadius = 12
-        content.layer?.borderWidth = 1
-        content.layer?.borderColor = NSColor(srgbRed: 0.21, green: 0.22, blue: 0.24, alpha: 1).cgColor
-
-        // The pulsing/solid status dot.
-        let dotSize: CGFloat = 9
-        let dotView = NSView(frame: .zero)
-        dotView.wantsLayer = true
-        dotView.translatesAutoresizingMaskIntoConstraints = false
-        let dot = CALayer()
-        dot.backgroundColor = jade.cgColor
-        dot.frame = CGRect(x: 0, y: 0, width: dotSize, height: dotSize)
-        dot.cornerRadius = dotSize / 2
-        dotView.layer?.addSublayer(dot)
-        dotLayer = dot
-        if pulsing {
-            let pulse = CABasicAnimation(keyPath: "opacity")
-            pulse.fromValue = 1.0
-            pulse.toValue = 0.25
-            pulse.duration = 0.7
-            pulse.autoreverses = true
-            pulse.repeatCount = .infinity
-            dot.add(pulse, forKey: "pulse")
+        var views: [NSView] = [wf]
+        if processing {
+            let s = NSProgressIndicator()
+            s.style = .spinning
+            s.controlSize = .small
+            s.isIndeterminate = true
+            s.appearance = NSAppearance(named: .darkAqua) // light spokes on the dark pill
+            s.translatesAutoresizingMaskIntoConstraints = false
+            s.startAnimation(nil)
+            spinner = s
+            views.append(s)
+        } else {
+            spinner?.stopAnimation(nil); spinner = nil
         }
 
-        let brand = label("voz", size: 11, weight: .bold, color: iris)
-        let statusLabel = label(status, size: 12, weight: .medium, color: statusColor)
-
-        let leftStack = NSStackView(views: [dotView, brand, statusLabel])
-        leftStack.orientation = .horizontal
-        leftStack.spacing = 8
-        leftStack.alignment = .centerY
-
-        var views: [NSView] = [leftStack]
-        if hasDetail {
-            let detailLabel = label(detail!, size: 12, weight: .regular, color: ink)
-            detailLabel.maximumNumberOfLines = 1
-            detailLabel.lineBreakMode = .byTruncatingTail
-            detailLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
-            detailLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            views.append(detailLabel)
-        }
-
+        let rightInset: CGFloat = processing ? 10 : 12
         let stack = NSStackView(views: views)
         stack.orientation = .horizontal
-        stack.spacing = 14
+        stack.spacing = 8
+        stack.alignment = .centerY
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: rightInset)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        let width = 12 + waveSize.width + (processing ? 8 + 16 : 0) + rightInset
+        let content = makeCapsule(width: width, height: pillHeight)
+        content.addSubview(stack)
+        var cons = [
+            stack.topAnchor.constraint(equalTo: content.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            wf.widthAnchor.constraint(equalToConstant: waveSize.width),
+            wf.heightAnchor.constraint(equalToConstant: waveSize.height),
+        ]
+        if let s = spinner {
+            cons += [s.widthAnchor.constraint(equalToConstant: 16), s.heightAnchor.constraint(equalToConstant: 16)]
+        }
+        NSLayoutConstraint.activate(cons)
+        install(content: content, width: width, height: pillHeight)
+    }
+
+    // MARK: text pill (errors / clipboard fallback)
+
+    private func presentText(_ message: String, detail: String?) {
+        close()
+        let hasDetail = detail != nil && !(detail!.isEmpty)
+        let msg = label(message, size: 12, weight: .medium, color: hasDetail ? jade : muted)
+        var views: [NSView] = [msg]
+        if hasDetail {
+            let d = label(detail!, size: 12, weight: .regular, color: ink)
+            d.maximumNumberOfLines = 1
+            d.lineBreakMode = .byTruncatingTail
+            d.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            d.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            views.append(d)
+        }
+        let width: CGFloat = hasDetail ? 460 : max(120, msg.intrinsicContentSize.width + 34)
+        let height: CGFloat = 32
+        let stack = NSStackView(views: views)
+        stack.orientation = .horizontal
+        stack.spacing = 12
         stack.alignment = .centerY
         stack.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 16)
         stack.translatesAutoresizingMaskIntoConstraints = false
+        let content = makeCapsule(width: width, height: height)
         content.addSubview(stack)
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: content.topAnchor),
             stack.bottomAnchor.constraint(equalTo: content.bottomAnchor),
             stack.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            dotView.widthAnchor.constraint(equalToConstant: dotSize),
-            dotView.heightAnchor.constraint(equalToConstant: dotSize),
         ])
+        install(content: content, width: width, height: height)
+    }
 
-        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
-                        styleMask: [.borderless, .nonactivatingPanel],
-                        backing: .buffered, defer: false)
+    // MARK: plumbing
+
+    private func makeCapsule(width: CGFloat, height: CGFloat) -> NSView {
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        content.wantsLayer = true
+        content.layer?.backgroundColor = bg.cgColor
+        content.layer?.cornerRadius = height / 2 // full capsule — very rounded
+        content.layer?.borderWidth = 1
+        content.layer?.borderColor = stroke.cgColor
+        return content
+    }
+
+    /// Install content into the (reused) panel for a smooth recording→processing transition.
+    private func install(content: NSView, width: CGFloat, height: CGFloat) {
+        let origin: NSPoint
+        if let screen = Self.activeScreen() {
+            let f = screen.visibleFrame
+            origin = NSPoint(x: f.midX - width / 2, y: f.minY + 28)
+        } else {
+            origin = .zero
+        }
+        if let p = panel {
+            p.contentView = content
+            p.setFrame(NSRect(origin: origin, size: CGSize(width: width, height: height)), display: true, animate: false)
+            return
+        }
+        let p = NSPanel(contentRect: NSRect(origin: origin, size: CGSize(width: width, height: height)),
+                        styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         p.isOpaque = false
         p.backgroundColor = .clear
         p.level = .floating
         p.contentView = content
         p.isMovableByWindowBackground = true
         p.collectionBehavior = [.canJoinAllSpaces, .transient]
-
-        if let screen = NSScreen.main {
-            let f = screen.visibleFrame
-            p.setFrameOrigin(NSPoint(x: f.midX - width / 2, y: f.minY + 28))
-        }
         p.orderFrontRegardless()
         panel = p
     }
 
+    private func autoClose(after seconds: TimeInterval) {
+        autoCloseWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.close() }
+        autoCloseWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+    }
+
+    /// The screen the user is actually working on — the one under the pointer — so the pill appears
+    /// near their context on multi-display setups, not always on the primary.
+    static func activeScreen() -> NSScreen? {
+        let mouse = NSEvent.mouseLocation
+        return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
+    }
+
     private func oneLine(_ text: String) -> String {
-        text.trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "\n", with: " ")
+        text.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " ")
     }
 
     private func label(_ text: String, size: CGFloat, weight: NSFont.Weight, color: NSColor) -> NSTextField {

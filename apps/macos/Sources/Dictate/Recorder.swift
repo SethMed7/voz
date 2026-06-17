@@ -29,6 +29,10 @@ final class Recorder {
     private var peak: Float = 0
     private var capped = false
 
+    /// Live normalized mic level (0…1) for the dictation waveform, emitted on the
+    /// main thread per audio buffer (~12×/s). Set before `start`; nil = no meter.
+    var onLevel: ((Float) -> Void)?
+
     /// Start recording to a fresh temp WAV. Mic permission is requested here
     /// (whisper needs no Speech entitlement). onError fires if we can't record.
     func start(onError: @escaping (String) -> Void) {
@@ -104,11 +108,22 @@ final class Recorder {
         let n = Int(buffer.frameLength)
         let samples = ch[0]
         var localMax: Float = 0
+        var sumSq: Float = 0
         for i in 0..<n {
-            let a = abs(samples[i])
+            let s = samples[i]
+            let a = abs(s)
             if a > localMax { localMax = a }
+            sumSq += s * s
         }
         if localMax > peak { peak = localMax }
+        // Drive the live waveform from RMS. Speech RMS is small (~0.02–0.1), so a linear map barely
+        // moves the bars — use a perceptual sqrt curve with real gain (after a tiny noise floor) so
+        // the bars clearly track your voice and rest flat in silence.
+        if let onLevel, n > 0 {
+            let rms = (sumSq / Float(n)).squareRoot()
+            let level = min(1, max(0, rms - 0.003).squareRoot() * 3.9)
+            DispatchQueue.main.async { onLevel(level) }
+        }
     }
 
     private func requestMic(_ completion: @escaping (Bool) -> Void) {

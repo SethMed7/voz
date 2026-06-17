@@ -14,6 +14,8 @@ final class CorrectionListener {
     private var pasted: Set<String> = []    // lowercased words we inserted (only correct OUR output)
     private var deadline = Date.distantPast
     private var onDetect: ((String, String) -> Void)?
+    private var lastSeen: String?           // field text at the previous poll (for the settle check)
+    private var stableCount = 0             // consecutive polls with unchanged text
 
     /// Begin watching. Returns false if there's nothing watchable (AX text unavailable) so the
     /// caller knows not to bother. `onDetect(from, to)` fires at most once, on the main queue.
@@ -28,8 +30,11 @@ final class CorrectionListener {
         element = el
         baseline = Self.words(value)
         pasted = Set(words)
+        lastSeen = value
+        stableCount = 0
         self.onDetect = onDetect
-        deadline = Date().addingTimeInterval(8)
+        // Watch long enough to actually read the pasted text, notice a wrong word, and fix it.
+        deadline = Date().addingTimeInterval(25)
         timer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in self?.poll() }
         return true
     }
@@ -37,12 +42,17 @@ final class CorrectionListener {
     func stop() {
         timer?.invalidate(); timer = nil
         element = nil; onDetect = nil; baseline = []; pasted = []
+        lastSeen = nil; stableCount = 0
     }
 
     private func poll() {
         guard let el = element else { stop(); return }
         if Date() > deadline { stop(); return }
         guard let cur = Self.value(of: el) else { return }
+        // Wait for the field to settle before judging the edit, so we capture the FINAL corrected
+        // word, not a half-typed fragment ("Dhaval", not "De"). Two unchanged polls ≈ ~1.2s still.
+        if cur == lastSeen { stableCount += 1 } else { lastSeen = cur; stableCount = 0; return }
+        guard stableCount >= 2 else { return }
         let current = Self.words(cur)
         guard let (from, to) = Self.detectCorrection(baseline: baseline, current: current, pasted: pasted) else { return }
         let cb = onDetect
@@ -56,14 +66,61 @@ final class CorrectionListener {
         let system = AXUIElementCreateSystemWide()
         var el: AnyObject?
         guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &el) == .success,
-              let e = el else { return nil }
+              let e = el, CFGetTypeID(e) == AXUIElementGetTypeID() else { return nil }
         return (e as! AXUIElement)
     }
 
+    /// Read the focused text as robustly as we can — many apps (incl. terminals like Ghostty) don't
+    /// put the text on the focused element's AXValue directly, so fall back to its selected text and
+    /// then to a text-bearing descendant. This is what lets edit-watching work beyond simple fields.
     private static func value(of el: AXUIElement) -> String? {
+        if let s = stringAttr(el, kAXValueAttribute), !s.isEmpty { return s }
+        if let s = stringAttr(el, kAXSelectedTextAttribute), !s.isEmpty { return s }
+        return firstTextValue(in: el, depth: 0)
+    }
+
+    private static func stringAttr(_ el: AXUIElement, _ attr: String) -> String? {
         var v: AnyObject?
-        guard AXUIElementCopyAttributeValue(el, kAXValueAttribute as CFString, &v) == .success else { return nil }
+        guard AXUIElementCopyAttributeValue(el, attr as CFString, &v) == .success else { return nil }
         return v as? String
+    }
+
+    /// Depth-bounded hunt for an AXTextArea/AXTextField descendant that exposes a value (terminals
+    /// and many custom views nest their editable text below the "focused" container).
+    private static func firstTextValue(in el: AXUIElement, depth: Int) -> String? {
+        guard depth < 4 else { return nil }
+        var childrenRef: AnyObject?
+        guard AXUIElementCopyAttributeValue(el, kAXChildrenAttribute as CFString, &childrenRef) == .success,
+              let children = childrenRef as? [AXUIElement] else { return nil }
+        for child in children.prefix(24) {
+            let role = stringAttr(child, kAXRoleAttribute)
+            if role == (kAXTextAreaRole as String) || role == (kAXTextFieldRole as String),
+               let s = stringAttr(child, kAXValueAttribute), !s.isEmpty { return s }
+            if let s = firstTextValue(in: child, depth: depth + 1) { return s }
+        }
+        return nil
+    }
+
+    /// Diagnostic for `--axprobe`: describe the frontmost app's focused element + whether voz can
+    /// read text from it (used to figure out edit-watching support in a given app, e.g. a terminal).
+    static func probe() -> String {
+        guard AXIsProcessTrusted() else { return "accessibility: NOT granted — grant voz first" }
+        guard let el = focusedElement() else { return "no focused UI element (click into a text area, then re-run)" }
+        let role = stringAttr(el, kAXRoleAttribute) ?? "?"
+        let sub = stringAttr(el, kAXSubroleAttribute) ?? "-"
+        var lines = ["focused role=\(role) subrole=\(sub)"]
+        if let v = stringAttr(el, kAXValueAttribute) { lines.append("AXValue: \(v.count) chars — \"\(snippet(v))\"") }
+        else { lines.append("AXValue: (none)") }
+        if let s = stringAttr(el, kAXSelectedTextAttribute), !s.isEmpty { lines.append("AXSelectedText: \"\(snippet(s))\"") }
+        if let d = firstTextValue(in: el, depth: 0) { lines.append("descendant text: \(d.count) chars — \"\(snippet(d))\"") }
+        let readable = value(of: el) != nil
+        lines.append(readable ? "→ voz CAN read text here (edit-watching should work)" : "→ voz CANNOT read text here (edit-watching won't work in this app)")
+        return lines.joined(separator: "\n")
+    }
+
+    private static func snippet(_ s: String) -> String {
+        let one = s.replacingOccurrences(of: "\n", with: "⏎").trimmingCharacters(in: .whitespaces)
+        return one.count > 80 ? String(one.prefix(80)) + "…" : one
     }
 
     // MARK: diff

@@ -54,22 +54,94 @@ final class LearnPill: NSObject {
         let height: CGFloat = 44
         let badge = circleButton(symbol: "checkmark", fg: .white, bgColor: iris, diameter: 26, action: #selector(noop))
         badge.isEnabled = false
-        let center = label("Saved “\(word)”", size: 13, weight: .medium, color: ink)
-        let remove = textButton("Remove", action: #selector(removeTapped))
+        let center = label("“\(word)” added to your dictionary", size: 13, weight: .medium, color: ink)
+        let undo = textButton("Undo", action: #selector(removeTapped))
 
-        let stack = NSStackView(views: [badge, center, remove])
+        let stack = NSStackView(views: [badge, center, undo])
         stack.orientation = .horizontal
         stack.spacing = 12
         stack.alignment = .centerY
-        stack.edgeInsets = NSEdgeInsets(top: 0, left: 9, bottom: 0, right: 9)
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: 9, bottom: 0, right: 12)
         stack.translatesAutoresizingMaskIntoConstraints = false
 
-        let width = min(520, max(240, center.intrinsicContentSize.width + 26 + remove.intrinsicContentSize.width + 12 * 2 + 9 * 2 + 16))
+        let width = min(560, max(300, center.intrinsicContentSize.width + 26 + undo.intrinsicContentSize.width + 12 * 2 + 9 + 12 + 16))
+        mountCapsule(stack: stack, width: width, height: height)
+        addCountdownBar(width: width, height: height, duration: 4.0) // grace window; no Undo = the add stands
+
+        let work = DispatchWorkItem { [weak self] in self?.close() }
+        autoClose = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0, execute: work)
+    }
+
+    /// A thin iris bar along the bottom that shrinks to empty over `duration` — a visible "you can
+    /// still Undo" countdown. Sits within the capsule's flat middle so the rounded ends stay clean.
+    private func addCountdownBar(width: CGFloat, height: CGFloat, duration: TimeInterval) {
+        guard let content = panel?.contentView else { return }
+        let radius = height / 2
+        let barH: CGFloat = 2.5
+        let bar = CALayer()
+        bar.backgroundColor = iris.cgColor
+        bar.cornerRadius = barH / 2
+        bar.anchorPoint = CGPoint(x: 0, y: 0.5)
+        bar.bounds = CGRect(x: 0, y: 0, width: max(0, width - 2 * radius), height: barH)
+        bar.position = CGPoint(x: radius, y: barH + 1)
+        content.layer?.addSublayer(bar)
+        let anim = CABasicAnimation(keyPath: "transform.scale.x")
+        anim.fromValue = 1.0
+        anim.toValue = 0.0
+        anim.duration = duration
+        anim.timingFunction = CAMediaTimingFunction(name: .linear)
+        anim.fillMode = .forwards
+        anim.isRemovedOnCompletion = false
+        bar.add(anim, forKey: "countdown")
+    }
+
+    /// Quiet, non-interactive progress while a fix is being tallied but isn't a rule yet:
+    /// "learning 'Dhaval' · 1 of 2". Brief and muted — it teaches the frequency mechanic
+    /// without nagging or asking for a tap. Auto-dismisses fast.
+    func showProgress(word: String, count: Int, of threshold: Int) {
+        close()
+        let height: CGFloat = 38
+        let badge = circleButton(symbol: "ear", fg: muted, bgColor: circle, diameter: 22, action: #selector(noop))
+        badge.isEnabled = false
+        let center = label("learning “\(word)” · \(count) of \(threshold)", size: 12, weight: .medium, color: muted)
+
+        let stack = NSStackView(views: [badge, center])
+        stack.orientation = .horizontal
+        stack.spacing = 9
+        stack.alignment = .centerY
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 14)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        let width = min(420, center.intrinsicContentSize.width + 22 + 9 + 10 + 14)
         mountCapsule(stack: stack, width: width, height: height)
 
         let work = DispatchWorkItem { [weak self] in self?.close() }
         autoClose = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8, execute: work)
+    }
+
+    /// A one-off muted info note (e.g. "can't watch this app for edits"). Quiet, brief, no buttons.
+    func showNote(_ message: String) {
+        close()
+        let height: CGFloat = 38
+        let badge = circleButton(symbol: "info.circle", fg: muted, bgColor: circle, diameter: 22, action: #selector(noop))
+        badge.isEnabled = false
+        let center = label(message, size: 12, weight: .medium, color: muted)
+
+        let stack = NSStackView(views: [badge, center])
+        stack.orientation = .horizontal
+        stack.spacing = 9
+        stack.alignment = .centerY
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 14)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        let width = min(460, center.intrinsicContentSize.width + 22 + 9 + 10 + 14)
+        mountCapsule(stack: stack, width: width, height: height)
+
+        let work = DispatchWorkItem { [weak self] in self?.close() }
+        autoClose = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.8, execute: work)
     }
 
     func close() {
@@ -109,7 +181,7 @@ final class LearnPill: NSObject {
         p.becomesKeyOnlyIfNeeded = true
         p.contentView = content
         p.collectionBehavior = [.canJoinAllSpaces, .transient]
-        if let screen = NSScreen.main {
+        if let screen = Overlay.activeScreen() {
             let f = screen.visibleFrame
             p.setFrameOrigin(NSPoint(x: f.midX - width / 2, y: f.minY + 28))
         }

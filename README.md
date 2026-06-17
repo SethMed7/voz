@@ -12,9 +12,9 @@
 
 **voz** (Spanish for *voice*) is a tiny menu-bar app with two halves of one idea:
 
-- **Dictate** — hold **⌃ + Fn**, speak, release. What you said is transcribed on your Mac,
+- **Dictate** — hold **⌃ + ⌥**, speak, release. What you said is transcribed on your Mac,
   cleaned (fillers and self-corrections dropped), and typed where your cursor is.
-- **Read aloud** — select text anywhere and press **⌃⇧V**. voz reads it in a warm neural
+- **Read aloud** — select text anywhere and press **⌃V**. voz reads it in a warm neural
   voice and follows along word by word.
 
 One menu-bar item, one mental model: *voice in, voice out.* Nothing you say or read ever
@@ -24,14 +24,14 @@ leaves your computer. voz is the blend of two earlier tools — **leelo** (read 
 ## The two modes
 
 ### Dictate (voice → text)
-Hold **⌃ + Fn** and talk; a small jade dot pulses bottom-center while the mic is hot —
+Hold **⌃ + ⌥** and talk; a small jade dot pulses bottom-center while the mic is hot —
 pause to think as long as you like, it records the whole hold and transcribes once on
 release (a pause is never a stop). The cleaned text lands in the focused app. It learns
 your spellings as you go (`myela` → `Myela`) via a local dictionary you control — and the
 same dictionary teaches **read aloud** how to pronounce those words.
 
 ### Read aloud (text → voice)
-Press **⌃⇧V** to start watching, then highlight anything — each selection is queued in
+Press **⌃V** to start watching, then highlight anything — each selection is queued in
 order and read along word by word in a minimized player that never steals focus. Or
 right-click → **Services → Read Aloud with voz** for a one-shot read.
 
@@ -43,8 +43,8 @@ its hotkey or asks for anything at all. When on, each mode lights up exactly the
 
 | You use… | Microphone | Speech Recognition | Accessibility |
 | --- | :--: | :--: | :--: |
-| **Read aloud** (⌃⇧V) | – | – | ✓ (to read your selection) |
-| **Dictate** (hold ⌃+Fn) | ✓ | only if the Apple fallback engine is used | ✓ (to type the result) |
+| **Read aloud** (⌃V) | – | – | ✓ (to read your selection) |
+| **Dictate** (hold ⌃+⌥) | ✓ | only if the Apple fallback engine is used | ✓ (to type the result) |
 | **Learn-from-edits** dictionary | – | – | ✓ (to spot your in-place fixes) |
 
 If you only ever read aloud, voz never touches your microphone.
@@ -68,12 +68,26 @@ Apple APIs), so only the app *shell* is macOS-specific.
 - **Read aloud:** [Kokoro-82M](https://github.com/hexgrad/kokoro) neural voices (via
   `core/say.ts`), or the built-in macOS voice with zero setup.
 - **Dictate:** NVIDIA **Parakeet** (`sherpa-onnx`) → **whisper.cpp** → Apple's on-device
-  recognizer, in that order of preference. Cleanup is deterministic (`core/clean.ts`), no LLM.
+  recognizer, in that order of preference. Optionally run Parakeet as a **warm local server**
+  (`setup-asr.sh`) that keeps the model loaded so each clip transcribes in ~0.08 s instead of
+  ~1.5 s — same model, same quality, 100% on-device (binds `127.0.0.1` only). Cleanup defaults to a fast deterministic pass
+  (`core/clean.ts`, no LLM), with an optional **on-device LLM polish** that adds real punctuation
+  and removes contextual fillers ("like", "right", "you know"). The polish **reuses a local LLM
+  runtime you already run** — it prefers an existing **[Ollama](https://ollama.com)** (the same
+  one tools like Breve use, so nothing is installed twice; a *thinking* model such as gemma is
+  auto-run with thinking off, so it answers in ~1s), and falls back to a self-contained
+  [llama.cpp](https://github.com/ggml-org/llama.cpp) + small open-weight model
+  (Qwen2.5-1.5B-Instruct, Apache-2.0) on machines with no Ollama. It is **guarded**: anything that
+  changes your words rather than just punctuating/trimming them is discarded in favor of the
+  deterministic result, and it falls back the same way if the model is missing or stalls.
 
-Both premium engines are optional and fully on-device. Enable them with
-`sh scripts/setup-kokoro.sh` (Kokoro voices) and `sh scripts/setup-helper.sh` (Parakeet + the
-canonical cleaner) — everything installs under `~/.voz`, and an existing `~/.leelo` / `~/.dictado`
-install is migrated in place (no model re-download).
+These premium layers are all optional and fully on-device. Enable them with
+`sh scripts/setup-kokoro.sh` (Kokoro voices), `sh scripts/setup-helper.sh` (Parakeet + the
+canonical cleaner), `sh scripts/setup-asr.sh` (the warm Parakeet server — near-instant
+transcription), and `sh scripts/setup-cleaner.sh` (the LLM polish — which just confirms your
+existing Ollama, or sets one up). The on-device homes install under `~/.voz`, and an existing
+`~/.leelo` / `~/.dictado` install is migrated in place (no model re-download). Toggle the polish
+under **menu → Dictate → "Polish with AI"**; pin a model with `VOZ_OLLAMA_MODEL=<name>`.
 
 ## Privacy
 
@@ -114,7 +128,8 @@ sh scripts/install.sh                    # build, sign, install to /Applications
 # headless smoke tests (no UI, no permissions):
 .build/debug/voz --version
 .build/debug/voz --speak "hello"         # read-aloud pipeline
-.build/debug/voz --clean "um so the the report"   # dictation cleanup
+.build/debug/voz --clean "um so the the report"   # deterministic cleanup
+.build/debug/voz --polish "um so like the the report"  # full chain (on-device LLM if installed)
 .build/debug/voz --engine                # which transcription engine would run
 .build/debug/voz --apply "ship the miele engine"  # apply your dictionary (dictation)
 .build/debug/voz --pronounce "read Myela aloud"   # apply your pronunciations (read-aloud)

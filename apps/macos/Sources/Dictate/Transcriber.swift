@@ -22,7 +22,8 @@ enum Transcribers {
     static func run(_ wav: URL, clipDuration: TimeInterval, completion: @escaping (String) -> Void) {
         let timeout = max(15, clipDuration * 2 + 8)
         var chain: [Transcriber] = []
-        if SherpaTranscriber.isAvailable() { chain.append(SherpaTranscriber()) }
+        if WarmSherpaTranscriber.isAvailable() { chain.append(WarmSherpaTranscriber()) } // warm Parakeet (~0.08s)
+        if SherpaTranscriber.isAvailable() { chain.append(SherpaTranscriber()) }          // cold Parakeet fallback
         if WhisperTranscriber.isAvailable() { chain.append(WhisperTranscriber()) }
         chain.append(AppleFileTranscriber()) // always present: the install-free baseline
         tryChain(chain, 0, wav, timeout, completion)
@@ -42,9 +43,33 @@ enum Transcribers {
     /// User-facing name of the engine a dictation would use right now — the single source of
     /// truth for the priority order, shown in the menu and the --engine flag.
     static func activeEngineName() -> String {
+        if WarmSherpaTranscriber.isAvailable() { return "Parakeet (warm)" }
         if SherpaTranscriber.isAvailable() { return "Parakeet" }
         if WhisperTranscriber.isAvailable() { return "whisper.cpp" }
         return "Apple Speech"
+    }
+}
+
+// MARK: - Warm Parakeet (sherpa-onnx kept loaded via WarmASR — ~0.08s/clip vs ~1.5s cold)
+
+/// Transcribes via voz's warm ASR server: afconvert to 16k mono, then hand the path to WarmASR
+/// (loopback HTTP). Same Parakeet model as SherpaTranscriber, just never reloaded. Returns "" on any
+/// failure so the chain falls through to the cold engines.
+final class WarmSherpaTranscriber: Transcriber {
+    static func isAvailable() -> Bool { WarmASR.isInstalled() }
+
+    func transcribe(_ wav: URL, timeout: TimeInterval, completion: @escaping (String) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let wav16 = wav.deletingPathExtension().appendingPathExtension("warm16k.wav")
+            defer { try? FileManager.default.removeItem(at: wav16) }
+            let conv = Subprocess.run("/usr/bin/afconvert",
+                [wav.path, wav16.path, "-d", "LEI16@16000", "-f", "WAVE", "-c", "1"], timeout: timeout)
+            guard conv?.status == 0, FileManager.default.fileExists(atPath: wav16.path) else {
+                DispatchQueue.main.async { completion("") }; return
+            }
+            let text = WarmASR.shared.transcribe(wav16kPath: wav16.path) ?? ""
+            DispatchQueue.main.async { completion(text) }
+        }
     }
 }
 
@@ -194,6 +219,7 @@ final class AppleFileTranscriber: Transcriber {
     private var task: SFSpeechRecognitionTask?
     private var latest = ""
     private var resolved = false
+    private let lock = NSLock() // the recognition callback and the timeout race to finish exactly once
 
     func transcribe(_ wav: URL, timeout: TimeInterval, completion: @escaping (String) -> Void) {
         ensureAuth { [weak self] ok in
@@ -206,8 +232,10 @@ final class AppleFileTranscriber: Transcriber {
             request.shouldReportPartialResults = false
 
             let finish: (String) -> Void = { text in
-                guard !self.resolved else { return }
+                self.lock.lock()
+                if self.resolved { self.lock.unlock(); return }
                 self.resolved = true
+                self.lock.unlock()
                 self.task?.cancel(); self.task = nil
                 DispatchQueue.main.async { completion(text) }
             }
@@ -246,7 +274,9 @@ final class AppleFileTranscriber: Transcriber {
 enum Hallucination {
     private static let phantoms: Set<String> = [
         "you", "thank you", "thank you.", "thanks for watching", "thanks for watching.",
-        "thanks for watching!", "[blank_audio]", "(silence)", "bye", "bye.", ".", "...",
+        "thanks for watching!", "[blank_audio]", "[music]", "(music)", "[applause]", "(applause)",
+        "[laughter]", "(laughter)", "(pause)", "(silence)", "[silence]", "bye", "bye.", "bye!",
+        ".", "...", "♪", "♪♪",
     ]
 
     static func filter(_ raw: String) -> String {
@@ -257,7 +287,7 @@ enum Hallucination {
         let lines = s.split(separator: "\n", omittingEmptySubsequences: true).map {
             $0.trimmingCharacters(in: .whitespaces)
         }
-        if lines.count >= 3, Set(lines).count == 1 { return "" }
+        if lines.count >= 2, Set(lines).count == 1 { return "" }
         if !lines.isEmpty { s = collapseConsecutiveDuplicates(lines).joined(separator: "\n") }
 
         let lower = s.lowercased()
