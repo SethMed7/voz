@@ -54,11 +54,15 @@ public final class EscapeKey {
             var hk = EventHotKeyID()
             GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
                               nil, MemoryLayout<EventHotKeyID>.size, nil, &hk)
-            // Only our Escape — every hotkey-pressed handler on the app target sees every hotkey.
+            // Only our Escape — every hotkey-pressed handler on the app target sees every hotkey, so
+            // we MUST return eventNotHandledErr for anything else, or this handler swallows the event
+            // and starves the ⌃V handler (returning noErr unconditionally silently killed ⌃V after the
+            // first read-aloud session installed this handler).
             if hk.signature == EscapeKey.sig, hk.id == EscapeKey.hotKeyID {
                 DispatchQueue.main.async { EscapeKey.shared.fire() }
+                return noErr
             }
-            return noErr
+            return OSStatus(eventNotHandledErr)
         }, 1, &spec, nil, nil)
     }
 }

@@ -35,6 +35,7 @@ public final class SpeakController: NSObject {
     private var captureMode = false
     private var sessionActive = false
     private var grabbing = false
+    private var grabSession = 0   // bumped when a session starts/ends; a grab tagged with a stale id is discarded
     private var lastCaptured: String?
     private var mouseDownPoint = NSPoint.zero
     private var mouseDownMonitor: Any?
@@ -54,7 +55,13 @@ public final class SpeakController: NSObject {
         Speaker.shared.onQueueDrained = { [weak self] in self?.handleQueueDrained() }
 
         installEventHandler()                       // the dispatch handler is harmless when no hotkey is live
-        if speakEnabled { registerHotKey() }        // off → ⌃V never fires
+        if speakEnabled { registerHotKey(); prewarmTTS() } // off → ⌃V never fires; on → warm Kokoro early
+    }
+
+    /// Warm the Kokoro TTS server in the background so the model is resident before the first read.
+    /// No-ops if the warm server isn't installed (voz then uses the per-spawn cold path).
+    private func prewarmTTS() {
+        DispatchQueue.global(qos: .utility).async { WarmTTS.shared.prewarm() }
     }
 
     /// The read-aloud section of the shared menu. Rebuilt by the coordinator on demand.
@@ -107,6 +114,7 @@ public final class SpeakController: NSObject {
         speakEnabled.toggle()
         if speakEnabled {
             registerHotKey()
+            prewarmTTS()
         } else {
             endSessionHard()        // stops watching + speaking, closes the bar, drops the esc hotkey
             unregisterHotKey()
@@ -116,7 +124,7 @@ public final class SpeakController: NSObject {
 
     // MARK: capture mode (the ⌃V toggle)
 
-    /// ⌃V: start watching if idle, otherwise stop everything.
+    /// Menu "Watch selections": a plain toggle (the menu item carries the checkmark).
     @objc func toggleCapture() {
         if sessionActive {
             endSessionHard()
@@ -125,7 +133,18 @@ public final class SpeakController: NSObject {
         }
     }
 
+    /// ⌃V — always (re)arm watching. Never a dead press: it clears any lingering or wedged session
+    /// (e.g. a read still finishing, or one that didn't drain) and starts a fresh watch. Stopping is
+    /// Esc (or the menu toggle), not ⌃V — so pressing ⌃V a second time always does the obvious thing.
+    func startWatching() {
+        removeMonitors()   // drop any existing watch monitors first (idempotent) so we never double-install
+        startCapture()
+    }
+
     private func startCapture() {
+        prewarmTTS()       // get Kokoro resident before the first highlight (no-op if not installed)
+        grabSession += 1   // invalidate any in-flight grab from a prior session so it can't leak in
+        grabbing = false   // …and never let a stale flag block this fresh session's first read
         sessionActive = true
         captureMode = true
         lastCaptured = nil
@@ -138,6 +157,7 @@ public final class SpeakController: NSObject {
         Overlay.shared.clearTranscript(placeholder: "Highlight text anywhere — voz reads each selection in order and follows along word by word.")
         Overlay.shared.setStatus("watching — highlight to read")
         installMonitors()
+        registerEscapeHotKey() // Esc stops the whole session, for its full life (not just while watching)
         // Honor the old muscle memory: if something is already selected, read it.
         captureCurrentSelection()
     }
@@ -146,23 +166,30 @@ public final class SpeakController: NSObject {
     func exitWatching() {
         guard captureMode else { return }
         captureMode = false
+        grabbing = false
         removeMonitors()
         setStatusIcon(watching: false)
         watchMenuItem?.state = .off
         Overlay.shared.setWatching(false)
-        if !Speaker.shared.isActive && Speaker.shared.pending == 0 {
-            endSessionSoft()
+        if Speaker.shared.isActive || Speaker.shared.pending > 0 {
+            Overlay.shared.setStatus("reading — Esc again to stop")
         } else {
-            Overlay.shared.setStatus("reading — will stop when done")
+            // Stopped watching with nothing queued — stay open so a second Esc closes it (the two-stage
+            // model), but don't linger forever if you walk away.
+            Overlay.shared.setStatus("stopped — Esc again to close")
+            scheduleIdleClose(8)
         }
     }
 
-    /// ⌃V again / ■: stop reading and close the bar.
+    /// Esc / ■: stop reading and close the bar.
     func endSessionHard() {
         cancelIdleClose()
         captureMode = false
         sessionActive = false
+        grabbing = false
+        grabSession += 1   // any grab still in flight from this session is now stale
         removeMonitors()
+        unregisterEscapeHotKey()
         setStatusIcon(watching: false)
         watchMenuItem?.state = .off
         Speaker.shared.stop()
@@ -172,6 +199,8 @@ public final class SpeakController: NSObject {
     /// The queue finished on its own and we're no longer watching.
     private func endSessionSoft() {
         sessionActive = false
+        grabbing = false
+        unregisterEscapeHotKey()
         setStatusIcon(watching: false)
         watchMenuItem?.state = .off
         Overlay.shared.finish()
@@ -197,6 +226,7 @@ public final class SpeakController: NSObject {
             endSessionSoft()
         } else {
             // A one-shot read (Services / "Read Selection") finished.
+            unregisterEscapeHotKey()
             Overlay.shared.finish()
         }
     }
@@ -205,13 +235,16 @@ public final class SpeakController: NSObject {
 
     func readOneShot(_ text: String) {
         guard speakEnabled else { return } // disabled capability is inert, incl. the Services entry
+        cancelIdleClose()  // a stale idle-close timer from a capture session must not abort this read
         captureMode = false
         sessionActive = false
+        grabbing = false
         removeMonitors()
         setStatusIcon(watching: false)
         watchMenuItem?.state = .off
         Overlay.shared.present(watching: false)
         Overlay.shared.center() // always start bottom-center
+        registerEscapeHotKey()  // Esc stops a one-shot read too
         Speaker.shared.speakNow(text)
     }
 
@@ -229,6 +262,15 @@ public final class SpeakController: NSObject {
         endSessionHard()
     }
 
+    /// Quit-time teardown: stop any read and kill the Kokoro subprocess + delete its temp audio. The
+    /// overlay/hotkey state is moot at quit, so we just stop the engine pipeline (mirrors dictate.shutdown).
+    public func shutdown() {
+        cancelIdleClose()
+        unregisterEscapeHotKey()
+        Speaker.shared.stop()
+        WarmTTS.shared.shutdown() // kill the resident TTS server we may have spawned
+    }
+
     // MARK: watching the user's highlights
 
     private func installMonitors() {
@@ -239,14 +281,13 @@ public final class SpeakController: NSObject {
             guard let self else { return }
             let up = NSEvent.mouseLocation
             let dragged = hypot(up.x - self.mouseDownPoint.x, up.y - self.mouseDownPoint.y) > 4
-            // A drag is a sweep-select; clickCount ≥ 2 is a word/line double-
-            // or triple-click. Plain single clicks aren't selections, so we
-            // skip them and avoid spamming synthetic ⌘C.
-            if dragged || event.clickCount >= 2 {
+            // A drag is a sweep-select; clickCount ≥ 2 is a word/line double- or triple-click;
+            // a Shift-click extends the selection to where you clicked. Plain single clicks aren't
+            // selections, so we skip those and avoid spamming synthetic ⌘C.
+            if dragged || event.clickCount >= 2 || event.modifierFlags.contains(.shift) {
                 self.captureCurrentSelection()
             }
         }
-        registerEscapeHotKey()
     }
 
     private func removeMonitors() {
@@ -255,25 +296,36 @@ public final class SpeakController: NSObject {
         }
         mouseDownMonitor = nil
         mouseUpMonitor = nil
-        unregisterEscapeHotKey()
     }
 
     private func captureCurrentSelection() {
         guard captureMode, !grabbing else { return }
         grabbing = true
+        let gen = grabSession
         SelectionGrabber.grab { [weak self] text in
             guard let self else { return }
+            // A grab started by a session that has since closed or re-armed is stale: drop it WITHOUT
+            // touching `grabbing` (a newer session may own it now), so old text can't bleed into a new one.
+            guard self.grabSession == gen else { return }
             self.grabbing = false
             guard self.captureMode else { return }
             let trimmed = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty, trimmed != self.lastCaptured else { return }
-            // If you dragged to *extend* the previous selection, only read the
-            // newly added tail — don't re-read what's already queued.
+            // Shift-click / drag to EXTEND a selection re-grabs the whole thing, so read only the new
+            // tail instead of duplicating what was just read. Guard it on a word boundary: an unrelated
+            // selection that merely shares a prefix ("The cat" → "The catalog") must be read in full,
+            // not as a mid-word fragment ("alog is huge").
             var toRead = trimmed
-            if let last = self.lastCaptured, trimmed.hasPrefix(last) {
-                let tail = String(trimmed.dropFirst(last.count)).trimmingCharacters(in: .whitespacesAndNewlines)
-                if tail.isEmpty { self.lastCaptured = trimmed; return }
-                toRead = tail
+            if let last = self.lastCaptured, !last.isEmpty, trimmed.hasPrefix(last) {
+                let boundary = trimmed.index(trimmed.startIndex, offsetBy: last.count)
+                let atWordBreak = boundary == trimmed.endIndex
+                    || trimmed[boundary].isWhitespace
+                    || (last.last.map { !$0.isLetter && !$0.isNumber } ?? false)
+                if atWordBreak {
+                    let tail = String(trimmed[boundary...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if tail.isEmpty { self.lastCaptured = trimmed; return }
+                    toRead = tail
+                }
             }
             self.lastCaptured = trimmed
             self.cancelIdleClose() // a new highlight keeps the session alive
@@ -296,17 +348,21 @@ public final class SpeakController: NSObject {
         handlerInstalled = true
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
                                       eventKind: UInt32(kEventHotKeyPressed))
-        // One handler serves both hotkeys; dispatch on the registered id.
+        // This is ONE of two hotkey handlers on the app's event target (the other is EscapeKey's).
+        // Every handler sees every hotkey-pressed event, so we MUST return eventNotHandledErr for
+        // hotkeys we don't own — returning noErr unconditionally would swallow the event and starve
+        // the other handler (the exact bug that made ⌃V die after the first read-aloud session armed
+        // Escape). Only ⌃V (id 1) is ours.
         InstallEventHandler(GetApplicationEventTarget(), { _, event, _ -> OSStatus in
             var hk = EventHotKeyID()
             GetEventParameter(event, EventParamName(kEventParamDirectObject),
                               EventParamType(typeEventHotKeyID), nil,
                               MemoryLayout<EventHotKeyID>.size, nil, &hk)
-            let id = hk.id
-            DispatchQueue.main.async {
-                if id == 1 { SpeakController.shared.toggleCapture() } // ⌃V; Escape is handled by EscapeKey
+            if hk.id == 1 {
+                DispatchQueue.main.async { SpeakController.shared.startWatching() }
+                return noErr
             }
-            return noErr
+            return OSStatus(eventNotHandledErr) // let Escape (and anything else) reach its handler
         }, 1, &eventType, nil, nil)
     }
 
@@ -330,10 +386,17 @@ public final class SpeakController: NSObject {
         }
     }
 
-    // While watching, Escape stops watching — claimed from the shared EscapeKey owner so it never
-    // collides with dictation's Esc. Only claimed while watching, so Escape is normal otherwise.
-    private func registerEscapeHotKey() { EscapeKey.shared.claim(self) { [weak self] in self?.exitWatching() } }
+    // Escape is the read-aloud stop key — two-stage (see handleEscape). Claimed from the shared
+    // EscapeKey owner so it never collides with dictation's Esc, for the session's full life, so
+    // Escape is normal whenever voz isn't reading.
+    private func registerEscapeHotKey() { EscapeKey.shared.claim(self) { [weak self] in self?.handleEscape() } }
     private func unregisterEscapeHotKey() { EscapeKey.shared.release(self) }
+
+    /// Esc is two-stage: the FIRST press stops *watching* for new highlights but keeps reading the
+    /// queue and stays open; a SECOND press stops reading and closes. (Mirrors the ✕ then ■ buttons.)
+    private func handleEscape() {
+        if captureMode { exitWatching() } else { endSessionHard() }
+    }
 }
 
 /// Right-click → Services → "Read Aloud with voz". Receives the selection
