@@ -8,7 +8,7 @@ Protocol (loopback, same machine, so we pass a file path — no upload):
   GET  /health                       -> 200 {"ok": true}
   POST /transcribe  {"path": "/abs/16k-mono.wav"}  -> 200 {"text": "..."}
 """
-import os, sys, json, wave
+import os, sys, json, wave, time, threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import numpy as np
 import sherpa_onnx
@@ -36,6 +36,22 @@ recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
     decoding_method="greedy_search",
     model_type="nemo_transducer",
 )
+
+
+# Reclaim memory when unused: exit after a stretch with no requests (the app re-warms on the next
+# dictation). Also reclaims an orphaned server left behind by a crash/force-quit.
+IDLE = float(env("VOZ_ASR_IDLE_S", default="300"))
+_last = [time.time()]
+
+
+def _idle_watch():
+    while True:
+        time.sleep(30)
+        if time.time() - _last[0] > IDLE:
+            os._exit(0)
+
+
+threading.Thread(target=_idle_watch, daemon=True).start()
 
 
 def transcribe(path):
@@ -66,11 +82,13 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        _last[0] = time.time()
         self._send(200, {"ok": True}) if self.path == "/health" else self._send(404, {"error": "not found"})
 
     def do_POST(self):
         if self.path != "/transcribe":
             return self._send(404, {"error": "not found"})
+        _last[0] = time.time()
         try:
             n = int(self.headers.get("Content-Length", 0))
             path = json.loads(self.rfile.read(n)).get("path", "")

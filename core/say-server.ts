@@ -11,7 +11,7 @@
  *        -> streams one line per chunk as it's ready: "<wav path>\t<chunk text>\n"
  * Renders are SERIALIZED (one model, FIFO) so a prefetch can never fight the live read for CPU.
  */
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readdirSync, statSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -83,6 +83,29 @@ const tts = await KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0-ONNX
 });
 await tts.generate("voz", { voice: "af_heart" as any }).catch(() => {}); // warm the ONNX session once
 
+// Reclaim memory when unused: exit after a stretch with no requests (the app re-warms on the next
+// read). Also fixes orphaned servers left behind by a crash/force-quit and the ~550MB idle footprint.
+const IDLE_MS = Number(process.env.VOZ_TTS_IDLE_MS ?? 5 * 60 * 1000);
+let lastActivity = Date.now();
+
+// We hand out chunk-WAV paths and the client deletes the files after playing; the parent temp dir is
+// left behind, so sweep dirs older than the playout window instead of accumulating them forever.
+function sweepStaleTemp() {
+  try {
+    const base = tmpdir();
+    for (const name of readdirSync(base)) {
+      if (!name.startsWith("voz-") && !name.startsWith("leelo-")) continue;
+      const p = join(base, name);
+      try { if (Date.now() - statSync(p).mtimeMs > 2 * 60 * 1000) rmSync(p, { recursive: true, force: true }); } catch {}
+    }
+  } catch {}
+}
+sweepStaleTemp();
+setInterval(() => {
+  sweepStaleTemp();
+  if (Date.now() - lastActivity > IDLE_MS) process.exit(0);
+}, 30_000).unref?.();
+
 // One model instance → renders must not overlap. Chain them so a prefetch waits behind the live read.
 let tail: Promise<unknown> = Promise.resolve();
 function serialize<T>(fn: () => Promise<T>): Promise<T> {
@@ -98,6 +121,7 @@ Bun.serve({
   hostname: "127.0.0.1",
   idleTimeout: 0, // a prefetch connection may wait in the FIFO, and long reads take a while
   async fetch(req) {
+    lastActivity = Date.now();
     const url = new URL(req.url);
     if (req.method === "GET" && url.pathname === "/health") return Response.json({ ok: true });
     if (req.method === "POST" && url.pathname === "/render") {

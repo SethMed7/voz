@@ -27,7 +27,7 @@ final class WaveformView: NSView {
             }
             self.needsDisplay = true
         }
-        RunLoop.main.add(t, forMode: .common) // keep ticking during window drags
+        RunLoop.main.add(t, forMode: .default) // .default lets the accessory's run loop go idle when not reading
         timer = t
     }
 

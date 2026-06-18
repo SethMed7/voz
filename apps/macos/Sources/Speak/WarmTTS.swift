@@ -17,6 +17,7 @@ final class WarmTTS {
 
     /// Cached health, updated by prewarm() off the main thread; read cheaply on main by KokoroEngine.
     private(set) var ready = false
+    private var lastHealthyAt = Date.distantPast  // skip the probe on rapid re-arms when recently healthy
 
     var baseURL: String { "http://127.0.0.1:\(port)" }
 
@@ -84,7 +85,8 @@ final class WarmTTS {
     /// thread. Updates `ready` so the audio engine can pick the warm path on the main thread.
     func prewarm() {
         guard Self.isInstalled() else { ready = false; return }
-        if isHealthy() { ready = true; return } // a prior session's server is already up — reuse it
+        if ready, Date().timeIntervalSince(lastHealthyAt) < 30 { return } // trust the cache — no curl probe
+        if isHealthy() { ready = true; lastHealthyAt = Date(); return } // a prior session's server is up — reuse it
         lock.lock()
         if server == nil || server?.isRunning != true, !isHealthy(),
            let bun = Self.bunPath(), let script = Self.scriptPath() {
@@ -101,6 +103,7 @@ final class WarmTTS {
         }
         lock.unlock()
         ready = waitHealthy(timeout: 12)
+        if ready { lastHealthyAt = Date() }
     }
 
     /// A warm request just failed — re-verify health on the next read rather than trusting the cache.

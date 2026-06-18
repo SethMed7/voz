@@ -28,17 +28,29 @@ final class MicWaveformView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     /// Feed a normalized mic level (0…1). Must be called on the main thread.
-    func setLevel(_ l: CGFloat) { target = min(1, max(0, l)) }
+    func setLevel(_ l: CGFloat) {
+        target = min(1, max(0, l))
+        if timer == nil && !flat { start() } // re-arm if the view is reused after a stop
+    }
 
-    /// Recording's over — collapse the bars to a flat line and stop reacting to input.
-    func goFlat() { flat = true; target = 0 }
+    /// Recording's over — collapse the bars to a flat line, then STOP the per-frame loop. Static flat
+    /// bars need no redraws and the spinner conveys "processing", so we don't burn 60fps for the whole
+    /// multi-second transcribe + polish phase (the clearest energy waste in the app).
+    func goFlat() {
+        flat = true; target = 0
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.stop() } // after the ease-out
+    }
 
     private func start() {
         guard timer == nil else { return }
+        // .default (not .common): a cosmetic equalizer needn't tick during a modal drag of its own tiny
+        // pill, and a .common timer keeps the menu-bar accessory's run loop from ever going quiescent.
         let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.tick() }
-        RunLoop.main.add(t, forMode: .common) // keep ticking during window drags
+        RunLoop.main.add(t, forMode: .default)
         timer = t
     }
+
+    private func stop() { timer?.invalidate(); timer = nil }
 
     private func tick() {
         phase += 0.42
