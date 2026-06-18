@@ -1,6 +1,6 @@
 import AppKit
 
-/// The small, bottom-centered dictation indicator. Recording shows ONLY a live jade waveform that
+/// The small, bottom-centered dictation indicator. Recording shows ONLY a live blue waveform that
 /// moves with your voice — no text, no wordmark. On release the waveform goes flat and a spinner
 /// appears to its right (processing); then it closes as the text pastes. Error/clipboard states use
 /// a tiny text pill. Non-activating, so focus stays in the app you're dictating into.
@@ -9,11 +9,11 @@ final class Overlay {
 
     private var panel: NSPanel?
     private var waveformView: MicWaveformView?
-    private var spinner: NSProgressIndicator?
+    private var spinner: Spinner?
     private var autoCloseWork: DispatchWorkItem?
 
     private let ink = NSColor(srgbRed: 0.93, green: 0.94, blue: 0.96, alpha: 1)
-    private let jade = NSColor(srgbRed: 0x22 / 255.0, green: 0xC7 / 255.0, blue: 0xA9 / 255.0, alpha: 1)
+    private let blue = NSColor(srgbRed: 0x2E / 255.0, green: 0x74 / 255.0, blue: 0xFF / 255.0, alpha: 1) // electric blue — the live waveform, accents
     private let muted = NSColor(srgbRed: 0.62, green: 0.66, blue: 0.72, alpha: 1)
     private let bg = NSColor(srgbRed: 0x16 / 255.0, green: 0x16 / 255.0, blue: 0x16 / 255.0, alpha: 0.97)
     private let stroke = NSColor(srgbRed: 0.21, green: 0.22, blue: 0.24, alpha: 1)
@@ -48,7 +48,7 @@ final class Overlay {
 
     func close() {
         autoCloseWork?.cancel(); autoCloseWork = nil
-        spinner?.stopAnimation(nil); spinner = nil
+        spinner = nil
         panel?.orderOut(nil); panel = nil
         waveformView = nil
     }
@@ -65,7 +65,7 @@ final class Overlay {
             wf.goFlat()
         } else {
             wf = MicWaveformView(bars: 7)
-            wf.barColor = jade
+            wf.barColor = blue
         }
         wf.translatesAutoresizingMaskIntoConstraints = false
         wf.removeFromSuperview()
@@ -73,17 +73,13 @@ final class Overlay {
 
         var views: [NSView] = [wf]
         if processing {
-            let s = NSProgressIndicator()
-            s.style = .spinning
-            s.controlSize = .small
-            s.isIndeterminate = true
-            s.appearance = NSAppearance(named: .darkAqua) // light spokes on the dark pill
+            let s = Spinner(frame: NSRect(x: 0, y: 0, width: 16, height: 16))
+            s.color = blue
             s.translatesAutoresizingMaskIntoConstraints = false
-            s.startAnimation(nil)
             spinner = s
             views.append(s)
         } else {
-            spinner?.stopAnimation(nil); spinner = nil
+            spinner = nil
         }
 
         let rightInset: CGFloat = processing ? 10 : 12
@@ -117,7 +113,7 @@ final class Overlay {
     private func presentText(_ message: String, detail: String?) {
         close()
         let hasDetail = detail != nil && !(detail!.isEmpty)
-        let msg = label(message, size: 12, weight: .medium, color: hasDetail ? jade : muted)
+        let msg = label(message, size: 12, weight: .medium, color: hasDetail ? blue : muted)
         var views: [NSView] = [msg]
         if hasDetail {
             let d = label(detail!, size: 12, weight: .regular, color: ink)
@@ -180,7 +176,16 @@ final class Overlay {
         p.contentView = content
         p.isMovableByWindowBackground = true
         p.collectionBehavior = [.canJoinAllSpaces, .transient]
+        // Gentle pop-in: fade up with a small upward slide so the pill arrives, not blinks.
+        p.alphaValue = 0
+        p.setFrameOrigin(NSPoint(x: origin.x, y: origin.y - 10))
         p.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            p.animator().alphaValue = 1
+            p.animator().setFrameOrigin(origin)
+        }
         panel = p
     }
 

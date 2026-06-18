@@ -12,7 +12,7 @@ final class LearnPill: NSObject {
     private var onRemove: (() -> Void)?
 
     private let ink = NSColor(srgbRed: 0.93, green: 0.94, blue: 0.96, alpha: 1)
-    private let iris = NSColor(srgbRed: 0x6E / 255.0, green: 0x56 / 255.0, blue: 0xE8 / 255.0, alpha: 1) // voz brand accent (was dictado dusk-blue)
+    private let blue = NSColor(srgbRed: 0x2E / 255.0, green: 0x74 / 255.0, blue: 0xFF / 255.0, alpha: 1) // electric blue — voz brand accent
     private let muted = NSColor(srgbRed: 0.62, green: 0.66, blue: 0.72, alpha: 1)
     private let bg = NSColor(srgbRed: 0x1c / 255.0, green: 0x1c / 255.0, blue: 0x1e / 255.0, alpha: 0.98)
     private let circle = NSColor(srgbRed: 0.27, green: 0.28, blue: 0.30, alpha: 1)
@@ -28,7 +28,7 @@ final class LearnPill: NSObject {
         center.alignment = .center
 
         let reject = circleButton(symbol: "xmark", fg: ink, bgColor: circle, diameter: dot, action: #selector(rejectTapped))
-        let accept = circleButton(symbol: "checkmark", fg: .white, bgColor: iris, diameter: dot, action: #selector(acceptTapped))
+        let accept = circleButton(symbol: "checkmark", fg: .white, bgColor: blue, diameter: dot, action: #selector(acceptTapped))
 
         let stack = NSStackView(views: [reject, center, accept])
         stack.orientation = .horizontal
@@ -52,7 +52,7 @@ final class LearnPill: NSObject {
         self.onRemove = onRemove
 
         let height: CGFloat = 44
-        let badge = circleButton(symbol: "checkmark", fg: .white, bgColor: iris, diameter: 26, action: #selector(noop))
+        let badge = circleButton(symbol: "checkmark", fg: .white, bgColor: blue, diameter: 26, action: #selector(noop))
         badge.isEnabled = false
         let center = label("“\(word)” added to your dictionary", size: 13, weight: .medium, color: ink)
         let undo = textButton("Undo", action: #selector(removeTapped))
@@ -73,14 +73,14 @@ final class LearnPill: NSObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 4.0, execute: work)
     }
 
-    /// A thin iris bar along the bottom that shrinks to empty over `duration` — a visible "you can
+    /// A thin blue bar along the bottom that shrinks to empty over `duration` — a visible "you can
     /// still Undo" countdown. Sits within the capsule's flat middle so the rounded ends stay clean.
     private func addCountdownBar(width: CGFloat, height: CGFloat, duration: TimeInterval) {
         guard let content = panel?.contentView else { return }
         let radius = height / 2
         let barH: CGFloat = 2.5
         let bar = CALayer()
-        bar.backgroundColor = iris.cgColor
+        bar.backgroundColor = blue.cgColor
         bar.cornerRadius = barH / 2
         bar.anchorPoint = CGPoint(x: 0, y: 0.5)
         bar.bounds = CGRect(x: 0, y: 0, width: max(0, width - 2 * radius), height: barH)
@@ -198,7 +198,7 @@ final class LearnPill: NSObject {
         b.target = self
         b.action = action
         b.attributedTitle = NSAttributedString(string: title, attributes: [
-            .foregroundColor: iris,
+            .foregroundColor: blue,
             .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
         ])
         b.setContentHuggingPriority(.required, for: .horizontal)

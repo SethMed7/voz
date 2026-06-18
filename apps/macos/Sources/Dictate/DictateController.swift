@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 
 public final class DictateController: NSObject {
     static private(set) var shared: DictateController!
@@ -16,7 +17,14 @@ public final class DictateController: NSObject {
     private var state: State = .idle { didSet { updateStatusIcon() } }
 
     private let recorder = Recorder()
-    private let listener = CorrectionListener()
+    private let learner = KeystrokeLearner() // learns corrections from keystrokes — works in terminals too
+    private var handsFree = false // true while a double-tap-⌃ (no-hold) session is recording
+
+    /// Whether double-tap ⌃ starts a hands-free dictation. On by default; toggle in the menu.
+    private var handsFreeEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: "handsFreeEnabled") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "handsFreeEnabled") }
+    }
 
     public override init() { super.init() }
 
@@ -49,6 +57,7 @@ public final class DictateController: NSObject {
 
         HotKey.shared.onPress = { [weak self] in self?.hotKeyPressed() }
         HotKey.shared.onRelease = { [weak self] in self?.hotKeyReleased() }
+        HotKey.shared.onDoubleTapControl = { [weak self] in self?.handsFreeToggle() }
         if dictateEnabled { HotKey.shared.register() } // off → no monitor, no permission prompt
     }
 
@@ -83,6 +92,10 @@ public final class DictateController: NSObject {
             ai.state = Cleaners.llmEnabled ? .on : .off
             items.append(ai)
         }
+        let hands = NSMenuItem(title: "Hands-free — double-tap ⌃", action: #selector(toggleHandsFree), keyEquivalent: "")
+        hands.target = self
+        hands.state = handsFreeEnabled ? .on : .off
+        items.append(hands)
         let learn = NSMenuItem(title: "Learn from edits", action: #selector(toggleLearn), keyEquivalent: "")
         learn.target = self
         learn.state = learnEnabled ? .on : .off
@@ -104,7 +117,7 @@ public final class DictateController: NSObject {
         } else {
             HotKey.shared.unregister()
             state = .idle
-            listener.stop(); LearnPill.shared.close()
+            learner.stop(); LearnPill.shared.close()
             Overlay.shared.close()
         }
         onMenuRebuild?()
@@ -115,9 +128,14 @@ public final class DictateController: NSObject {
         onMenuRebuild?() // refresh the checkmark in the shared menu
     }
 
+    @objc private func toggleHandsFree() {
+        handsFreeEnabled.toggle()
+        onMenuRebuild?() // refresh the checkmark in the shared menu
+    }
+
     @objc private func toggleLearn() {
         learnEnabled.toggle()
-        if !learnEnabled { listener.stop(); LearnPill.shared.close() }
+        if !learnEnabled { learner.stop(); LearnPill.shared.close() }
         onMenuRebuild?() // refresh the checkmark in the shared menu
     }
 
@@ -127,9 +145,28 @@ public final class DictateController: NSObject {
                               toggleLearn: { [weak self] in self?.toggleLearn() }) // flips + keeps the menu in sync
     }
 
+    // Hold ⌃+⌥: press starts, release stops.
     private func hotKeyPressed() {
         guard state == .idle else { return } // debounce key-repeat / re-press
-        listener.stop(); LearnPill.shared.close() // a new dictation supersedes any pending learn prompt
+        handsFree = false
+        beginRecording()
+    }
+    private func hotKeyReleased() {
+        guard state == .listening, !handsFree else { return } // a release only ends a *hold* session
+        finishRecording()
+    }
+
+    /// Double-tap ⌃ — hands-free mode: the first toggle starts recording (no need to hold), the next
+    /// stops and delivers. Lets you dictate without keeping keys down.
+    private func handsFreeToggle() {
+        guard dictateEnabled, handsFreeEnabled else { return }
+        if state == .idle { handsFree = true; beginRecording() }
+        else if state == .listening, handsFree { finishRecording() }
+    }
+
+    private func beginRecording() {
+        learner.stop(); LearnPill.shared.close() // a new dictation supersedes any pending learn prompt
+        registerEsc() // Esc cancels while recording
         state = .listening
         Overlay.shared.showListening()
         // Warm the engines now so their load overlaps with you speaking, not the paste path:
@@ -145,8 +182,8 @@ public final class DictateController: NSObject {
         })
     }
 
-    private func hotKeyReleased() {
-        guard state == .listening else { return }
+    private func finishRecording() {
+        unregisterEsc()
         state = .finishing
         guard let clip = recorder.stop() else { // nothing captured
             state = .idle
@@ -169,6 +206,46 @@ public final class DictateController: NSObject {
         transcribeAndDeliver(clip)
     }
 
+    /// Esc while recording — discard the clip, paste nothing. Works for both hold and hands-free.
+    fileprivate func cancelRecording() {
+        guard state == .listening else { return }
+        unregisterEsc()
+        handsFree = false
+        recorder.onLevel = nil
+        if let clip = recorder.stop() { try? FileManager.default.removeItem(at: clip.url) }
+        state = .idle
+        Overlay.shared.flash(message: "cancelled")
+    }
+
+    // MARK: Esc-to-cancel (Carbon hotkey — consumes Esc only while recording, so it's normal otherwise)
+
+    private var escHandlerInstalled = false
+    private var escHotKeyRef: EventHotKeyRef?
+
+    private func installEscHandler() {
+        guard !escHandlerInstalled else { return }
+        escHandlerInstalled = true
+        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ -> OSStatus in
+            var hk = EventHotKeyID()
+            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                              nil, MemoryLayout<EventHotKeyID>.size, nil, &hk)
+            if hk.id == 9 { DispatchQueue.main.async { DictateController.shared?.cancelRecording() } }
+            return noErr
+        }, 1, &spec, nil, nil)
+    }
+
+    private func registerEsc() {
+        guard escHotKeyRef == nil else { return }
+        installEscHandler()
+        let id = EventHotKeyID(signature: OSType(0x766F_7A45), id: 9) // "vozE"
+        RegisterEventHotKey(UInt32(kVK_Escape), 0, id, GetApplicationEventTarget(), 0, &escHotKeyRef)
+    }
+
+    private func unregisterEsc() {
+        if let ref = escHotKeyRef { UnregisterEventHotKey(ref); escHotKeyRef = nil }
+    }
+
     /// One pass over the whole recorded clip, off the main thread, then clean +
     /// paste. The temp WAV is deleted as soon as we have the text — no audio is
     /// ever persisted.
@@ -185,9 +262,18 @@ public final class DictateController: NSObject {
                 return
             }
             DispatchQueue.global(qos: .utility).async { // LLM / bun cleaner may block
-                let cleaner = Cleaners.best(for: trimmed) // skips the LLM when already clean; off main
-                let cleaned = Lexicon.shared.apply(cleaner.clean(trimmed)) // cleanup, then your dictionary
-                DispatchQueue.main.async { self.deliver(cleaned) }
+                let spell = SpellOut.process(trimmed) // resolve any spoken spelling first
+                let cleaner = Cleaners.best(for: spell.text) // skips the LLM when already clean; off main
+                let cleaned = Lexicon.shared.apply(cleaner.clean(spell.text)) // cleanup, then your dictionary
+                DispatchQueue.main.async {
+                    for rule in spell.learned { Lexicon.shared.learnExplicit(from: rule.from, to: rule.to) }
+                    self.deliver(cleaned)
+                    if let word = spell.learned.first?.to { // confirm what spelling was locked in
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                            LearnPill.shared.showAdded(word: word) { spell.learned.forEach { Lexicon.shared.forget($0.from) } }
+                        }
+                    }
+                }
             }
         }
     }
@@ -216,7 +302,7 @@ public final class DictateController: NSObject {
         guard learnEnabled else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self, self.state == .idle else { return }
-            let watching = self.listener.start(pasted: pasted) { from, to in
+            let watching = self.learner.start(pasted: pasted) { from, to in
                 // Frequency-gated: each in-place fix is tallied; a word only becomes a
                 // permanent rule once you've corrected it the same way enough times.
                 switch Lexicon.shared.recordCorrection(from: from, to: to) {

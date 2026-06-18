@@ -4,15 +4,15 @@
 
 **the voice layer for your Mac — speak to type, select to hear. 100% on-device.**
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-6E56E8)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-2E74FF)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13%2B-161520)](#install)
-[![Privacy](https://img.shields.io/badge/voice-on--device-22C7A9)](#privacy)
+[![Privacy](https://img.shields.io/badge/voice-on--device-2E74FF)](#privacy)
 
 </div>
 
 **voz** (Spanish for *voice*) is a tiny menu-bar app with two halves of one idea:
 
-- **Dictate** — hold **⌃ + ⌥**, speak, release. What you said is transcribed on your Mac,
+- **Dictate** — hold **⌃ + ⌥** (or **double-tap ⌃** for hands-free), speak, release. What you said is transcribed on your Mac,
   cleaned (fillers and self-corrections dropped), and typed where your cursor is.
 - **Read aloud** — select text anywhere and press **⌃V**. voz reads it in a warm neural
   voice and follows along word by word.
@@ -24,9 +24,10 @@ leaves your computer. voz is the blend of two earlier tools — **leelo** (read 
 ## The two modes
 
 ### Dictate (voice → text)
-Hold **⌃ + ⌥** and talk; a small jade dot pulses bottom-center while the mic is hot —
+Hold **⌃ + ⌥** and talk; a small electric-blue waveform reacts bottom-center while the mic is hot —
 pause to think as long as you like, it records the whole hold and transcribes once on
-release (a pause is never a stop). The cleaned text lands in the focused app. It learns
+release (a pause is never a stop). Prefer no hands? **Double-tap ⌃** to start dictating and
+double-tap again to stop. The cleaned text lands in the focused app. It learns
 your spellings as you go (`myela` → `Myela`) via a local dictionary you control — and the
 same dictionary teaches **read aloud** how to pronounce those words.
 
@@ -136,9 +137,19 @@ sh scripts/install.sh                    # build, sign, install to /Applications
 .build/debug/voz --selftest              # learn-from-edits logic
 ```
 
+## Brand
+
+Black and **electric blue** (`#2E74FF`) — simple, bold, on-device. The waveform *is* the mark; it
+only moves when the mic is hot. Full palette + usage in [`brand/tokens.md`](brand/tokens.md).
+
+<div align="center">
+<img src="apps/macos/media/brand.png" alt="voz brand — icon, wordmark, and palette" width="820">
+</div>
+
 ## Roadmap
 
 - **Dictate → read-back** proofreading loop (speak it, hear it back to catch errors).
+- Keystroke-based edit learning, so corrections are learned even in terminals (Ghostty, etc.).
 - Non-macOS shells over the same `core/`.
 
 ## License

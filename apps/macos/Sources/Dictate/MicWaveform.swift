@@ -7,7 +7,7 @@ import AppKit
 /// eases each bar toward the latest level — fast attack, slow release, like a VU
 /// meter — so the motion looks fluid and alive rather than steppy.
 final class MicWaveformView: NSView {
-    var barColor: NSColor = NSColor(srgbRed: 0x22 / 255.0, green: 0xC7 / 255.0, blue: 0xA9 / 255.0, alpha: 1) {
+    var barColor: NSColor = NSColor(srgbRed: 0x2E / 255.0, green: 0x74 / 255.0, blue: 0xFF / 255.0, alpha: 1) {
         didSet { needsDisplay = true }
     }
 
@@ -63,6 +63,12 @@ final class MicWaveformView: NSView {
         let n = levels.count
         let gap: CGFloat = 3
         let barW = max(2.5, (bounds.width - gap * CGFloat(n - 1)) / CGFloat(n))
+        // Electric glow so the bars read as lit, matching the icon.
+        let glow = NSShadow()
+        glow.shadowColor = barColor.withAlphaComponent(0.7)
+        glow.shadowBlurRadius = 4
+        glow.shadowOffset = .zero
+        glow.set()
         barColor.setFill()
         for i in 0..<n {
             let h = max(3, levels[i] * bounds.height)
@@ -74,4 +80,43 @@ final class MicWaveformView: NSView {
     }
 
     deinit { timer?.invalidate() }
+}
+
+/// A small electric-blue spinner for the "processing" state — a stroked arc that rotates in place.
+/// Custom (not NSProgressIndicator) so it matches the brand color, which the system spinner won't.
+final class Spinner: NSView {
+    var color: NSColor = NSColor(srgbRed: 0x2E / 255.0, green: 0x74 / 255.0, blue: 0xFF / 255.0, alpha: 1) {
+        didSet { arc.strokeColor = color.cgColor }
+    }
+    private let arc = CAShapeLayer()
+
+    override init(frame: NSRect) { super.init(frame: frame); setup() }
+    required init?(coder: NSCoder) { fatalError() }
+
+    private func setup() {
+        wantsLayer = true
+        arc.fillColor = NSColor.clear.cgColor
+        arc.strokeColor = color.cgColor
+        arc.lineWidth = 2
+        arc.lineCap = .round
+        layer?.addSublayer(arc)
+    }
+
+    override func layout() {
+        super.layout()
+        let r = max(2, min(bounds.width, bounds.height) / 2 - 1.5)
+        let path = CGMutablePath()
+        path.addArc(center: CGPoint(x: bounds.midX, y: bounds.midY), radius: r,
+                    startAngle: 0, endAngle: .pi * 1.5, clockwise: false)
+        arc.path = path
+        arc.frame = bounds // anchorPoint defaults to center, so rotation spins in place
+        if arc.animation(forKey: "spin") == nil {
+            let a = CABasicAnimation(keyPath: "transform.rotation.z")
+            a.fromValue = 0
+            a.toValue = -Double.pi * 2
+            a.duration = 0.8
+            a.repeatCount = .infinity
+            arc.add(a, forKey: "spin")
+        }
+    }
 }

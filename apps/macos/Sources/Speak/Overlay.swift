@@ -39,11 +39,12 @@ final class Overlay {
     private var activeWord: NSRange?
     private var placeholderShown = false
 
-    // voz read-aloud: warm light surface. iris = brand/chrome; jade = live (watching, playing).
+    // voz read-aloud: warm light surface. Electric blue accents; live state is shown by the play
+    // glyph + animated waveform (iris/jade now share the one blue hue).
     private let ink = NSColor(srgbRed: 0.165, green: 0.141, blue: 0.118, alpha: 1)
     private let dim = NSColor(srgbRed: 0.663, green: 0.608, blue: 0.537, alpha: 1)
-    private let iris = NSColor(srgbRed: 0x6E / 255.0, green: 0x56 / 255.0, blue: 0xE8 / 255.0, alpha: 1)
-    private let jade = NSColor(srgbRed: 0x22 / 255.0, green: 0xC7 / 255.0, blue: 0xA9 / 255.0, alpha: 1)
+    private let iris = NSColor(srgbRed: 0x2E / 255.0, green: 0x74 / 255.0, blue: 0xFF / 255.0, alpha: 1) // electric blue (brand/chrome)
+    private let jade = NSColor(srgbRed: 0x2E / 255.0, green: 0x74 / 255.0, blue: 0xFF / 255.0, alpha: 1) // electric blue (live)
     private let sand = NSColor(srgbRed: 0.906, green: 0.847, blue: 0.769, alpha: 1)
     private let bg = NSColor(srgbRed: 0.984, green: 0.957, blue: 0.918, alpha: 0.98)
     private let bodyFont = NSFont.systemFont(ofSize: 15)

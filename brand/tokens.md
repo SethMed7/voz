@@ -2,7 +2,8 @@
 
 A **fresh identity**, deliberately unrelated to the two parents (leelo's coral-on-cream,
 dictado's dusk-blue-on-black). voz is the voice layer for your Mac, so the system is built
-around one idea: **iris is the voice; jade means live.**
+around two colors: **electric blue on black.** Blue is the voice — shiny, electric, a tech
+signal; black is the surface it lives on.
 
 ## Wordmark
 
@@ -14,20 +15,20 @@ it, it speaks to you). Pairs the family it descends from: *léelo* (read it), *d
 
 | Token | Hex | Role |
 | --- | --- | --- |
-| **iris** | `#6E56E8` | Primary accent — the brand, the wordmark, controls, the read-along marker |
-| **jade** | `#22C7A9` | "Live" state — the pulsing dot while the mic is hot or audio is playing |
-| **ink** | `#161520` | Dark surface (the dictation pill, dark UI) |
+| **electric** | `#2E74FF` | The voice — shiny electric blue: the brand, the wordmark, controls, the live waveform, the read-along marker, the processing spinner + loading bar |
+| **ink** | `#161520` | Black surface (the dictation pill, dark UI) — the other half of the palette |
 | **paper** | `#F5F2EC` | Light surface (the read-along panel) |
 | **mist** | `#8B8794` | Muted text, secondary labels |
 | **line-dark** | `#2A2833` | Hairline borders on dark surfaces |
 | **line-light** | `#E5E0D6` | Hairline borders on light surfaces |
 
-### Semantics (why two accents, not one)
+### Semantics (one accent: black + blue)
 
-- **iris** carries identity — it's voz everywhere a brand color appears.
-- **jade** is reserved for *activity*: recording, or audio playing. It's the only signal
-  that the mic might be hot, so it never appears on idle chrome. This keeps "is it
-  listening?" unambiguous — the single most important honesty in a voice tool.
+- **electric blue** carries everything — identity *and* activity. It's voz wherever an accent
+  appears: brand chrome, controls, and the live signal.
+- "Is it listening?" stays unambiguous through **motion**, not a second hue: the waveform only
+  reacts to your voice while the mic is hot, and the spinner only spins while processing — the
+  single most important honesty in a voice tool.
 
 ## Typography
 

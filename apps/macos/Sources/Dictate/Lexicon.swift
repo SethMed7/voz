@@ -104,6 +104,17 @@ final class Lexicon {
         save()
     }
 
+    /// Store a spelled-out correction (from → to) immediately — you said it on purpose, so it skips
+    /// the frequency gate. Unlike `learn`, this allows a casing-only rule (e.g. "dhaval" → "Dhaval").
+    func learnExplicit(from: String, to: String) {
+        let key = from.lowercased().trimmingCharacters(in: .whitespaces)
+        let value = to.trimmingCharacters(in: .whitespaces)
+        guard !key.isEmpty, !value.isEmpty, from.trimmingCharacters(in: .whitespaces) != value else { return }
+        corrections[key] = value
+        pending.removeValue(forKey: value.lowercased())
+        save()
+    }
+
     /// Record an in-place fix you made (from → to), frequency-gated and grouped by target. Each
     /// correction toward the same target word counts up — across however many ways the recognizer
     /// mis-heard it — and once the count reaches `learnThreshold`, every mis-hearing seen is promoted

@@ -1,51 +1,67 @@
 import AppKit
 
-/// Global hold-to-talk hotkey (⌃ + ⌥) via NSEvent flag monitoring.
+/// Global dictation hotkeys via NSEvent monitoring:
+///   • Hold ⌃ + ⌥ — hold-to-talk: `onPress` when both are down (any order), `onRelease` when either lifts.
+///   • Double-tap ⌃ (alone, quickly) — `onDoubleTapControl`: a hands-free toggle (start, then stop).
 ///
-/// The chord is modifier-only, so `RegisterEventHotKey` (which wants a real key)
-/// is a poor fit — we watch `flagsChanged` events instead. Since this is
-/// hold-to-talk we need BOTH edges: fire `onPress` the moment Control AND Option
-/// are both down, and `onRelease` the moment either lifts. Order is irrelevant —
-/// the chord arms as soon as both are held. A global monitor catches keys while
-/// other apps are focused (the normal case); a local monitor covers our own
-/// windows. Global keyboard monitoring needs Accessibility/Input-Monitoring
-/// permission, which the app already requires to paste.
+/// The chord is modifier-only, so `RegisterEventHotKey` (which wants a real key) is a poor fit — we
+/// watch `flagsChanged`. We also watch `keyDown` so a *clean* Control tap can be told apart from
+/// Control used as a shortcut modifier (⌃C etc.): the double-tap only fires on a deliberate bare
+/// double-tap, never on shortcuts. Global monitoring needs Accessibility, which the app already has.
 final class HotKey {
     static let shared = HotKey()
 
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
+    var onDoubleTapControl: (() -> Void)?
 
-    private var globalMonitor: Any?
-    private var localMonitor: Any?
+    private var monitors: [Any] = []
     private var active = false
 
     /// Both must be held to arm, in any order. Option shows up as `.option`.
     private let chord: NSEvent.ModifierFlags = [.control, .option]
 
+    // Double-tap-Control detection (timestamps are NSEvent.timestamp — monotonic seconds since boot).
+    private var controlWasDown = false
+    private var controlDownAt: TimeInterval = 0
+    private var controlTainted = false   // another modifier joined, or a key was pressed → not a clean tap
+    private var lastCleanTapAt: TimeInterval = 0
+    private var cooldownUntil: TimeInterval = 0 // ignore taps briefly after a toggle (don't re-fire on the gesture's tail)
+    private let tapWindow: TimeInterval = 0.4
+    private let minTapGap: TimeInterval = 0.08  // two edges closer than this are key chatter, not a deliberate double-tap
+
     func register() {
-        guard globalMonitor == nil, localMonitor == nil else { return } // idempotent: never stack monitors
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            self?.handle(event)
+        guard monitors.isEmpty else { return } // idempotent: never stack monitors
+        let mask: NSEvent.EventTypeMask = [.flagsChanged, .keyDown]
+        if let g = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] e in self?.handle(e) }) {
+            monitors.append(g)
         }
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            self?.handle(event)
-            return event
+        if let l = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] e in self?.handle(e); return e }) {
+            monitors.append(l)
         }
     }
 
-    /// Tear the monitors down so ⌃⌥ is fully inert (used when dictation is toggled off).
-    /// Clears `active` so a half-held chord can't strand a press across a disable.
+    /// Tear the monitors down so the hotkeys are fully inert (used when dictation is toggled off).
     func unregister() {
-        if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
-        if let localMonitor { NSEvent.removeMonitor(localMonitor) }
-        globalMonitor = nil
-        localMonitor = nil
+        monitors.forEach { NSEvent.removeMonitor($0) }
+        monitors.removeAll()
         active = false
+        controlWasDown = false
+        controlTainted = false
     }
 
     private func handle(_ event: NSEvent) {
-        let down = event.modifierFlags.intersection(chord) == chord
+        if event.type == .keyDown {
+            if controlWasDown { controlTainted = true } // a key pressed while Control is held → it's a shortcut
+            return
+        }
+        // flagsChanged
+        let flags = event.modifierFlags
+        let controlNow = flags.contains(.control)
+        let others = !flags.intersection([.command, .option, .shift, .function, .capsLock]).isEmpty
+
+        // Hold chord (⌃ + ⌥).
+        let down = flags.intersection(chord) == chord
         if down, !active {
             active = true
             DispatchQueue.main.async { self.onPress?() }
@@ -53,5 +69,28 @@ final class HotKey {
             active = false
             DispatchQueue.main.async { self.onRelease?() }
         }
+
+        // Double-tap Control, pressed cleanly (no other modifier, no key) twice within the window.
+        let t = event.timestamp
+        if controlNow, !controlWasDown {
+            controlDownAt = t
+            controlTainted = others
+        } else if controlNow, others {
+            controlTainted = true
+        } else if !controlNow, controlWasDown {
+            // A clean tap = Control pressed+released alone, briefly, and not during a post-toggle cooldown.
+            if !controlTainted, t - controlDownAt < tapWindow, t >= cooldownUntil {
+                let gap = t - lastCleanTapAt
+                if gap > minTapGap, gap < tapWindow {
+                    lastCleanTapAt = 0
+                    cooldownUntil = t + 0.6 // the next toggle needs a fresh deliberate double-tap
+                    DispatchQueue.main.async { self.onDoubleTapControl?() }
+                } else {
+                    lastCleanTapAt = t
+                }
+            }
+            controlDownAt = 0
+        }
+        controlWasDown = controlNow
     }
 }

@@ -39,6 +39,12 @@ public enum DictateCLI {
             print(BasicCleaner.cleaned(args[i + 1])) // deterministic pass only
             return true
         }
+        if let i = args.firstIndex(of: "--spell"), i + 1 < args.count {
+            let r = SpellOut.process(args[i + 1])
+            print("text:  \(r.text)")
+            for rule in r.learned { print("learn: \(rule.from) -> \(rule.to)") }
+            return true
+        }
         if let i = args.firstIndex(of: "--polish"), i + 1 < args.count {
             // Full cleaner chain: the on-device LLM when installed, else deterministic.
             print(Cleaners.best().clean(args[i + 1]))
