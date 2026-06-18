@@ -43,11 +43,14 @@ final class OllamaCleaner: Cleaner {
     /// The model to use: VOZ_OLLAMA_MODEL → the first model the server reports, cached so we don't
     /// curl /api/tags on every clean (warm() primes this during recording). Call OFF the main thread.
     private static var cachedModel: String?
+    private static let modelLock = NSLock() // warm() and clean() reach model() from two concurrent off-main dispatches
     static func model() -> String? {
         if let m = ProcessInfo.processInfo.environment["VOZ_OLLAMA_MODEL"], !m.isEmpty { return m }
-        if let c = cachedModel { return c }
-        cachedModel = tags()?.first
-        return cachedModel
+        modelLock.lock(); let cached = cachedModel; modelLock.unlock()
+        if let cached { return cached }
+        let fetched = tags()?.first // network call OUTSIDE the lock (don't block the other caller ~4s)
+        modelLock.lock(); if cachedModel == nil { cachedModel = fetched }; let result = cachedModel; modelLock.unlock()
+        return result
     }
 
     private static func curlPath() -> String {

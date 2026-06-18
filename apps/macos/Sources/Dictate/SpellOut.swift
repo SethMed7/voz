@@ -13,13 +13,14 @@ import Foundation
 /// speech ("we sell a b c batteries", "J R R Tolkien", grades, stutters) can never be swallowed or,
 /// worse, silently learned into your dictionary.
 enum SpellOut {
-    private enum Cue { case trigger, caps, lower, connector }
+    private enum Cue { case trigger, caps, lower }
     private static func cue(_ s: String) -> Cue? {
         switch s.lowercased() {
         case "that's", "thats", "spelled", "spelt", "spell", "spelling": return .trigger
         case "capital", "caps", "uppercase": return .caps
         case "lowercase": return .lower
-        case "it", "is", "as", "in", "like": return .connector // skippable filler between cue and letters
+        // NO connector words ("it", "is", "as"…): the cue must sit IMMEDIATELY before the letters, so
+        // incidental single letters in normal speech can't be bridged into a spelling.
         default: return nil
         }
     }
@@ -42,9 +43,9 @@ enum SpellOut {
                 if let last = out.last, isWord(core(last)) { heard = core(last); out.removeLast() }
                 let cased = applyCase(letters, upper: plan.upper, lower: plan.lower, like: heard)
                 out.append(cased)
-                let canon = letters.lowercased()
-                if canon != cased { learned.append((canon, cased)) }                 // lock the spelling + casing
-                if let h = heard, h.lowercased() != canon { learned.append((h, cased)) } // map the misrecognition
+                // Learn ONLY a genuine misrecognition (the heard letters differ from what you spelled) —
+                // never a casing-only rule, which would wrongly recase an ordinary word you spelled out.
+                if let h = heard, h.lowercased() != letters.lowercased() { learned.append((h, cased)) }
                 i = j
                 continue
             }
@@ -62,7 +63,6 @@ enum SpellOut {
                 case .trigger: trigger = true
                 case .caps: upper = true
                 case .lower: lower = true
-                case .connector: break
                 }
                 n += 1; p -= 1
             }

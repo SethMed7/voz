@@ -19,6 +19,7 @@ public final class DictateController: NSObject {
     private let recorder = Recorder()
     private let learner = KeystrokeLearner() // learns corrections from keystrokes — works in terminals too
     private var handsFree = false // true while a double-tap-⌃ (no-hold) session is recording
+    private var recordingWatchdog: DispatchWorkItem? // force-finishes a stuck session if a key-up is dropped
 
     /// Whether double-tap ⌃ starts a hands-free dictation. On by default; toggle in the menu.
     private var handsFreeEnabled: Bool {
@@ -116,6 +117,7 @@ public final class DictateController: NSObject {
             HotKey.shared.register()
         } else {
             HotKey.shared.unregister()
+            recordingWatchdog?.cancel(); recordingWatchdog = nil
             unregisterEsc() // and don't leave Esc consumed if we were recording
             if let clip = recorder.stop() { try? FileManager.default.removeItem(at: clip.url) }
             state = .idle
@@ -179,13 +181,22 @@ public final class DictateController: NSObject {
         }
         recorder.onLevel = { Overlay.shared.updateLevel($0) }
         recorder.start(onError: { [weak self] message in
+            self?.recordingWatchdog?.cancel()
             self?.unregisterEsc() // don't leave Esc globally consumed if the mic couldn't start
             self?.state = .idle
             Overlay.shared.flash(message: message)
         })
+        // Safety net: if a ⌃⌥ key-up is ever dropped, force-finish so Esc + the mic can't wedge forever.
+        let watchdog = DispatchWorkItem { [weak self] in
+            guard let self, self.state == .listening else { return }
+            self.finishRecording()
+        }
+        recordingWatchdog = watchdog
+        DispatchQueue.main.asyncAfter(deadline: .now() + 305, execute: watchdog)
     }
 
     private func finishRecording() {
+        recordingWatchdog?.cancel(); recordingWatchdog = nil
         unregisterEsc()
         state = .finishing
         guard let clip = recorder.stop() else { // nothing captured
@@ -212,6 +223,7 @@ public final class DictateController: NSObject {
     /// Esc while recording — discard the clip, paste nothing. Works for both hold and hands-free.
     fileprivate func cancelRecording() {
         guard state == .listening else { return }
+        recordingWatchdog?.cancel(); recordingWatchdog = nil
         unregisterEsc()
         handsFree = false
         recorder.onLevel = nil
@@ -279,7 +291,7 @@ public final class DictateController: NSObject {
     /// started in the meantime.
     private func startLearning(pasted: String) {
         guard learnEnabled else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self, self.state == .idle else { return }
             let watching = self.learner.start(pasted: pasted) { from, to in
                 // Frequency-gated: each in-place fix is tallied; a word only becomes a

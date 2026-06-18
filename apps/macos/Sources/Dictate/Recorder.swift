@@ -95,7 +95,10 @@ final class Recorder {
         engine?.stop()
         engine = nil
         file = nil // ARC closes/flushes the WAV
-        guard let url, sampleRate > 0, frames > 0 else { return nil }
+        guard let url, sampleRate > 0, frames > 0 else {
+            if let url { try? FileManager.default.removeItem(at: url) } // header-only WAV, no audio captured — don't orphan it
+            return nil
+        }
         let duration = Double(frames) / sampleRate
         return Result(url: url, duration: duration, peak: peak, capped: capped)
     }

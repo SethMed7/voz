@@ -465,6 +465,7 @@ final class KokoroEngine: NSObject, SpeechEngine, AVAudioPlayerDelegate {
         process?.terminate()
         player?.stop()
         player = nil
+        for item in queue { try? FileManager.default.removeItem(at: item.url) } // delete undelivered TTS audio — never persist it
         queue.removeAll()
     }
 }

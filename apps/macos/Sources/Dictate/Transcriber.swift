@@ -241,14 +241,17 @@ final class AppleFileTranscriber: Transcriber {
             }
 
             self.task = recognizer.recognitionTask(with: request) { result, error in
+                // `latest` is written here (Speech's queue) and read by the timeout (main) — guard both.
                 if let result {
-                    self.latest = result.bestTranscription.formattedString
-                    if result.isFinal { finish(self.latest) }
+                    self.lock.lock(); self.latest = result.bestTranscription.formattedString; let snap = self.latest; self.lock.unlock()
+                    if result.isFinal { finish(snap) }
                 }
-                if error != nil { finish(self.latest) }
+                if error != nil { self.lock.lock(); let snap = self.latest; self.lock.unlock(); finish(snap) }
             }
             // Bound it: on-device file recognition is usually quick, but never hang the paste path.
-            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { finish(self.latest) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
+                self.lock.lock(); let snap = self.latest; self.lock.unlock(); finish(snap)
+            }
         }
     }
 
