@@ -1,0 +1,4 @@
+# Every change to this repo requires @SethMed7's review.
+# Combined with branch protection (require a PR + require code-owner review) on main,
+# this makes @SethMed7 the sole approver: no PR can merge without your sign-off.
+* @SethMed7
