@@ -36,13 +36,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         dictate.shutdown() // stop the warm ASR server we may have spawned
+        speak.shutdown()   // stop any read + kill the Kokoro subprocess and delete its temp audio
     }
 
     /// Show the highest-priority capability's icon; when both are idle, show the brand mark.
     private func applyIcon() {
         let winner = dictateIcon.priority >= speakIcon.priority ? dictateIcon : speakIcon
-        let symbol = winner.priority == 0 ? "waveform" : winner.symbol
-        statusItem.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "voz")
+        // Resting (both idle) → the voz brand V. Active → the live SF Symbol, so a hot mic or an
+        // in-progress read still reads at a glance.
+        if winner.priority == 0 {
+            statusItem.button?.image = VozIcon.menuBar()
+        } else {
+            statusItem.button?.image = NSImage(systemSymbolName: winner.symbol, accessibilityDescription: "voz")
+        }
     }
 
     /// One menu, two sections. Rebuilt on demand (e.g. when a capability toggles a checkmark).

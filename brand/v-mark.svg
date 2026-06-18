@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="voz">
+  <!-- The voz "V" sound-wave mark, traced from the logo: a solid left down-stroke plus five
+       ascending equalizer bars forming the right arm. Brand gradient runs blue → cyan. The
+       menu-bar icon (apps/macos/Sources/voz/VozIcon.swift) mirrors this geometry as a template. -->
+  <defs>
+    <linearGradient id="voz" x1="0" y1="100" x2="100" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2E74FF"/>
+      <stop offset="1" stop-color="#46D6FF"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#voz)">
+    <!-- Left arm: flat top, converging to the bottom vertex. -->
+    <polygon points="0,7.6 28.8,7.6 54.9,100"/>
+    <!-- Right arm: five ascending capsule bars. -->
+    <rect x="56" y="31.2" width="6" height="68.8" rx="3"/>
+    <rect x="67" y="16.2" width="6" height="59.3" rx="3"/>
+    <rect x="77" y="9.5"  width="6" height="50.4" rx="3"/>
+    <rect x="86" y="3.1"  width="6" height="40.6" rx="3"/>
+    <rect x="94" y="0"    width="6" height="30.6" rx="3"/>
+  </g>
+</svg>
