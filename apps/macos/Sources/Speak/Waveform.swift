@@ -33,14 +33,20 @@ final class WaveformView: NSView {
 
     private func stop() {
         timer?.invalidate(); timer = nil
-        for i in levels.indices { levels[i] = 0.28 }
+        for i in levels.indices { levels[i] = 0.08 } // rest as a thin, flat equalizer line
         needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {
         let n = levels.count
-        let gap: CGFloat = 4
+        let gap: CGFloat = 3
         let barW = max(2.5, (bounds.width - gap * CGFloat(n - 1)) / CGFloat(n))
+        // Electric glow so the bars read as lit, matching the icon and the dictation pill.
+        let glow = NSShadow()
+        glow.shadowColor = barColor.withAlphaComponent(0.7)
+        glow.shadowBlurRadius = 4
+        glow.shadowOffset = .zero
+        glow.set()
         barColor.setFill()
         for i in 0..<n {
             let h = max(3, levels[i] * bounds.height)

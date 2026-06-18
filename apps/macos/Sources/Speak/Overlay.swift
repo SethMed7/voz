@@ -9,7 +9,10 @@ final class Overlay {
     static let shared = Overlay()
 
     enum Mode { case mini, expanded }
-    private var mode: Mode = .mini
+    /// A fresh session opens here. You press ⌃V to *see* your selections read back, so default to
+    /// the expanded panel (transcript + read-along); ⤡ collapses to the mini player anytime.
+    private let defaultMode: Mode = .expanded
+    private var mode: Mode = .expanded
 
     private var panel: NSPanel?
     private var container: NSView!
@@ -23,7 +26,6 @@ final class Overlay {
     private var miniPlay: NSButton!        // mini
     private var watchButton: NSButton!
     private var watchBadge: NSTextField!
-    private var miniBadge: NSTextField!
     private var voiceButton: NSButton!
     private var waveform: WaveformView!
     private var closeWork: DispatchWorkItem?
@@ -39,18 +41,21 @@ final class Overlay {
     private var activeWord: NSRange?
     private var placeholderShown = false
 
-    // voz read-aloud: warm light surface. Electric blue accents; live state is shown by the play
-    // glyph + animated waveform (iris/jade now share the one blue hue).
-    private let ink = NSColor(srgbRed: 0.165, green: 0.141, blue: 0.118, alpha: 1)
-    private let dim = NSColor(srgbRed: 0.663, green: 0.608, blue: 0.537, alpha: 1)
-    private let iris = NSColor(srgbRed: 0x2E / 255.0, green: 0x74 / 255.0, blue: 0xFF / 255.0, alpha: 1) // electric blue (brand/chrome)
-    private let jade = NSColor(srgbRed: 0x2E / 255.0, green: 0x74 / 255.0, blue: 0xFF / 255.0, alpha: 1) // electric blue (live)
-    private let sand = NSColor(srgbRed: 0.906, green: 0.847, blue: 0.769, alpha: 1)
-    private let bg = NSColor(srgbRed: 0.984, green: 0.957, blue: 0.918, alpha: 0.98)
+    // voz read-aloud — the dark identity: black surface, one electric-blue accent (brand: black +
+    // blue). Matches the dictation pill so the two capabilities feel like one app. "It's reading"
+    // is carried by MOTION (the animated waveform + play glyph), never a second hue — so the live
+    // accent is the same electric blue.
+    private let textHi = NSColor(srgbRed: 0.93, green: 0.94, blue: 0.96, alpha: 1)   // near-white, high-emphasis
+    private let textLo = NSColor(srgbRed: 0.62, green: 0.66, blue: 0.72, alpha: 1)   // mist — secondary labels / placeholder
+    private let accent = NSColor(srgbRed: 0x2E / 255.0, green: 0x74 / 255.0, blue: 0xFF / 255.0, alpha: 1) // electric blue — the one accent
+    private let liveAccent = NSColor(srgbRed: 0x2E / 255.0, green: 0x74 / 255.0, blue: 0xFF / 255.0, alpha: 1) // live = same blue; motion signals it
+    private let surface = NSColor(srgbRed: 0x16 / 255.0, green: 0x16 / 255.0, blue: 0x16 / 255.0, alpha: 0.97) // ink panel
+    private let line = NSColor(srgbRed: 0.21, green: 0.22, blue: 0.24, alpha: 1)     // hairline border on dark
+    private var softAccent: NSColor { accent.withAlphaComponent(0.16) }              // soft tint behind secondary icons
     private let bodyFont = NSFont.systemFont(ofSize: 15)
     private var boldFont: NSFont { NSFont.systemFont(ofSize: 15, weight: .heavy) }
 
-    private let miniSize = NSSize(width: 380, height: 56)
+    private let miniSize = NSSize(width: 220, height: 56)
     private let expandedSize = NSSize(width: 620, height: 360)
     private let pad: CGFloat = 24 // generous side padding for a cleaner card
 
@@ -83,7 +88,7 @@ final class Overlay {
         }
         panel?.orderOut(nil)
         panel = nil
-        mode = .mini // next session starts minimized again
+        mode = defaultMode // next session reopens with the transcript visible
     }
 
     // MARK: transcript
@@ -97,7 +102,7 @@ final class Overlay {
         placeholderShown = false
         if !placeholder.isEmpty {
             ts.setAttributedString(NSAttributedString(string: placeholder, attributes: [
-                .font: NSFont.systemFont(ofSize: 13), .foregroundColor: dim,
+                .font: NSFont.systemFont(ofSize: 13), .foregroundColor: textLo,
             ]))
             placeholderShown = true
         }
@@ -143,13 +148,13 @@ final class Overlay {
         let abs = NSRange(location: base.location + range.location, length: range.length)
         if let prev = activeWord, NSEqualRanges(prev, abs) { return }
         if let prev = activeWord { ts.setAttributes(baseAttrs(active: true), range: prev) }
-        ts.addAttributes([.foregroundColor: NSColor.white, .backgroundColor: iris, .font: boldFont], range: abs)
+        ts.addAttributes([.foregroundColor: NSColor.white, .backgroundColor: accent, .font: boldFont], range: abs)
         activeWord = abs
         autoScroll(abs)
     }
 
     private func baseAttrs(active: Bool) -> [NSAttributedString.Key: Any] {
-        [.font: bodyFont, .foregroundColor: active ? ink : dim]
+        [.font: bodyFont, .foregroundColor: active ? textHi : textLo]
     }
 
     /// Follow the read-along marker — but only if the user isn't scrolling by hand right now.
@@ -170,7 +175,6 @@ final class Overlay {
         guard panel != nil else { return }
         watchButton?.isHidden = !on
         watchBadge?.isHidden = !on
-        miniBadge?.isHidden = !on
     }
 
     func setStatus(_ text: String) {
@@ -182,20 +186,24 @@ final class Overlay {
         guard panel != nil else { return }
         switch state {
         case .preparing: statusLabel.stringValue = "preparing voice…"; setSpeaking(false)
-        case .speaking: statusLabel.stringValue = "reading aloud"; setPlayGlyph("❚❚"); setSpeaking(true)
-        case .paused: statusLabel.stringValue = "paused"; setPlayGlyph("▶"); setSpeaking(false)
-        case .done: setPlayGlyph("▶"); setSpeaking(false)
+        case .speaking: statusLabel.stringValue = "reading aloud"; setPlayGlyph(playing: true); setSpeaking(true)
+        case .paused: statusLabel.stringValue = "paused"; setPlayGlyph(playing: false); setSpeaking(false)
+        case .done: setPlayGlyph(playing: false); setSpeaking(false)
         case .failed(let message): statusLabel.stringValue = "error: \(message)"; setSpeaking(false)
         }
     }
 
-    private func setPlayGlyph(_ g: String) { playButton?.title = g; miniPlay?.title = g }
+    private func setPlayGlyph(playing: Bool) {
+        let img = symbol(playing ? "pause.fill" : "play.fill")
+        playButton?.image = img
+        miniPlay?.image = img
+    }
     private func setSpeaking(_ on: Bool) {
         speaking = on
         syncWaveform()
-        // The play/pause control turns jade only while audio is actually playing (honest "it's live"),
-        // back to iris when paused/idle/done. The pillButton background is layer-backed.
-        let live = (on ? jade : iris).cgColor
+        // The play/pause control glows the live accent only while audio is actually playing (honest
+        // "it's live"), back to the base accent when paused/idle/done. The pill background is layer-backed.
+        let live = (on ? liveAccent : accent).cgColor
         miniPlay?.layer?.backgroundColor = live
         playButton?.layer?.backgroundColor = live
     }
@@ -204,7 +212,7 @@ final class Overlay {
     func finish() {
         guard panel != nil else { return }
         statusLabel.stringValue = "done"
-        setPlayGlyph("▶")
+        setPlayGlyph(playing: false)
         setSpeaking(false)
         activeWord = nil
         scheduleClose(after: 1.4)
@@ -263,13 +271,14 @@ final class Overlay {
     // MARK: build
 
     private func build() {
-        mode = .mini
-        container = NSView(frame: NSRect(origin: .zero, size: miniSize))
+        mode = defaultMode
+        let size = (mode == .mini) ? miniSize : expandedSize
+        container = NSView(frame: NSRect(origin: .zero, size: size))
         container.wantsLayer = true
-        container.layer?.backgroundColor = bg.cgColor
+        container.layer?.backgroundColor = surface.cgColor
         container.layer?.cornerRadius = 18
         container.layer?.borderWidth = 1
-        container.layer?.borderColor = NSColor(srgbRed: 0.910, green: 0.863, blue: 0.784, alpha: 1).cgColor
+        container.layer?.borderColor = line.cgColor
 
         buildExpanded()
         buildMini()
@@ -284,51 +293,51 @@ final class Overlay {
                 v.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             ])
         }
-        miniView.isHidden = false
-        expandedView.isHidden = true
+        miniView.isHidden = (mode != .mini)
+        expandedView.isHidden = (mode == .mini)
 
-        let p = NSPanel(contentRect: NSRect(origin: .zero, size: miniSize),
+        let p = NSPanel(contentRect: NSRect(origin: .zero, size: size),
                         styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         p.isOpaque = false
         p.backgroundColor = .clear
+        p.hasShadow = true   // soft drop shadow so the card floats, not pasted onto the screen
         p.level = .floating
         p.contentView = container
         p.isMovableByWindowBackground = true // drag it anywhere
         p.collectionBehavior = [.canJoinAllSpaces, .transient]
         if let screen = NSScreen.main {
             let f = screen.visibleFrame
-            p.setFrameOrigin(NSPoint(x: f.midX - miniSize.width / 2, y: f.minY + 28))
+            p.setFrameOrigin(NSPoint(x: f.midX - size.width / 2, y: f.minY + 28))
         }
         p.orderFrontRegardless()
         panel = p
     }
 
     private func buildMini() {
-        miniBadge = label("●", size: 12, weight: .bold, color: jade) // jade = a live capture is watching
-        miniBadge.toolTip = "watching for highlights"
+        // Minimal, premium: just the glowing waveform + play/pause + expand — like the dictation pill.
+        // No wordmark, no badge, no stop button (Esc stops). The waveform has a fixed width so the
+        // bars stay as crisp vertical capsules instead of stretching into ovals.
         waveform = WaveformView(bars: 7)
-        waveform.barColor = jade // bars only animate while actually playing — jade = live audio
-        waveform.translatesAutoresizingMaskIntoConstraints = false
-        waveform.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        miniPlay = pillButton("▶", action: #selector(togglePlay), color: iris)
-        let stop = pillButton("■", action: #selector(stopAll), color: sand, fg: ink)
-        let expandBtn = pillButton("⤢", action: #selector(expand), color: sand, fg: ink)
+        waveform.barColor = liveAccent // animates only while audio plays — motion = live; rests flat
+
+        miniPlay = circleButton("play.fill", action: #selector(togglePlay), color: accent, fg: .white, diameter: 36)
+        let expandBtn = circleButton("arrow.up.left.and.arrow.down.right", action: #selector(expand),
+                                     color: softAccent, fg: accent, diameter: 32)
         expandBtn.toolTip = "Show the text"
 
-        let stack = NSStackView(views: [label("voz", size: 11, weight: .bold, color: iris),
-                                        miniBadge, waveform, miniPlay, stop, expandBtn])
+        let stack = NSStackView(views: [waveform, miniPlay, expandBtn])
         stack.orientation = .horizontal
-        stack.spacing = 10
+        stack.spacing = 16
         stack.alignment = .centerY
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         let v = NSView()
         v.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -18),
+            stack.centerXAnchor.constraint(equalTo: v.centerXAnchor),
             stack.centerYAnchor.constraint(equalTo: v.centerYAnchor),
             waveform.heightAnchor.constraint(equalToConstant: 20),
+            waveform.widthAnchor.constraint(equalToConstant: 72),
         ])
         miniView = v
     }
@@ -356,31 +365,27 @@ final class Overlay {
         NotificationCenter.default.addObserver(self, selector: #selector(clipBoundsChanged),
                                                name: NSView.boundsDidChangeNotification, object: scroll.contentView)
 
-        statusLabel = label("", size: 11, weight: .medium,
-                            color: NSColor(srgbRed: 0.60, green: 0.541, blue: 0.467, alpha: 1))
+        statusLabel = label("", size: 11, weight: .medium, color: textLo)
         statusLabel.alignment = .right
         statusLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         statusLabel.lineBreakMode = .byTruncatingTail
 
-        playButton = pillButton("▶", action: #selector(togglePlay), color: iris)
-        let stopButton = pillButton("■", action: #selector(stopAll), color: sand, fg: ink)
-        watchButton = pillButton("✕", action: #selector(stopWatching), color: sand, fg: ink)
-        watchButton.toolTip = "Stop watching (keep reading what's queued)"
-        watchBadge = label("● watching", size: 11, weight: .bold, color: jade) // jade = live capture
-        let collapseBtn = pillButton("⤡", action: #selector(collapse), color: sand, fg: ink)
+        playButton = circleButton("play.fill", action: #selector(togglePlay), color: accent, fg: .white, diameter: 34)
+        let stopButton = circleButton("stop.fill", action: #selector(stopAll), color: softAccent, fg: accent, diameter: 32)
+        stopButton.toolTip = "Stop  ·  Esc again"
+        watchButton = circleButton("xmark", action: #selector(stopWatching), color: softAccent, fg: accent, diameter: 32)
+        watchButton.toolTip = "Stop watching (keep reading what's queued)  ·  Esc"
+        watchBadge = label("● watching", size: 11, weight: .bold, color: liveAccent) // live capture
+        let collapseBtn = circleButton("arrow.down.right.and.arrow.up.left", action: #selector(collapse),
+                                       color: softAccent, fg: accent, diameter: 32)
         collapseBtn.toolTip = "Minimize"
 
-        voiceButton = pillButton("", action: #selector(showVoiceMenu), color: sand, fg: ink)
+        voiceButton = circleButton("person.wave.2.fill", action: #selector(showVoiceMenu), color: softAccent, fg: accent, diameter: 32)
         voiceButton.toolTip = "Choose voice"
-        if let img = NSImage(systemSymbolName: "person.wave.2.fill", accessibilityDescription: "Voice") {
-            voiceButton.image = img
-            voiceButton.imagePosition = .imageOnly
-        } else { voiceButton.title = "🔊" }
 
-        let controls = NSStackView(views: [label("voz", size: 11, weight: .bold, color: iris),
-                                           watchBadge, playButton, stopButton, watchButton, voiceButton, statusLabel, collapseBtn])
+        let controls = NSStackView(views: [watchBadge, playButton, stopButton, watchButton, voiceButton, statusLabel, collapseBtn])
         controls.orientation = .horizontal
-        controls.spacing = 9
+        controls.spacing = 14
         controls.alignment = .centerY
         controls.translatesAutoresizingMaskIntoConstraints = false
 
@@ -391,11 +396,11 @@ final class Overlay {
             scroll.topAnchor.constraint(equalTo: v.topAnchor, constant: 16),
             scroll.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: pad),
             scroll.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -pad),
-            controls.topAnchor.constraint(equalTo: scroll.bottomAnchor, constant: 10),
+            controls.topAnchor.constraint(equalTo: scroll.bottomAnchor, constant: 12),
             controls.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: pad),
             controls.trailingAnchor.constraint(equalTo: v.trailingAnchor, constant: -pad),
-            controls.bottomAnchor.constraint(equalTo: v.bottomAnchor, constant: -14),
-            controls.heightAnchor.constraint(equalToConstant: 32),
+            controls.bottomAnchor.constraint(equalTo: v.bottomAnchor, constant: -18),
+            controls.heightAnchor.constraint(equalToConstant: 36),
         ])
         expandedView = v
     }
@@ -407,19 +412,29 @@ final class Overlay {
         return l
     }
 
-    private func pillButton(_ title: String, action: Selector, color: NSColor, fg: NSColor = .white) -> NSButton {
-        let b = NSButton(title: title, target: self, action: action)
+    /// An SF Symbol image at the app's control weight (template, tinted by the button).
+    private func symbol(_ name: String, size: CGFloat = 13, weight: NSFont.Weight = .semibold) -> NSImage? {
+        NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: size, weight: weight))
+    }
+
+    /// A round, layer-backed control with a centered SF Symbol. `accent` filled + white icon for the
+    /// primary play/pause; a soft-blue tint + blue icon for secondary actions — clean, cohesive, modern.
+    private func circleButton(_ symbolName: String, action: Selector, color: NSColor, fg: NSColor,
+                              diameter: CGFloat = 34) -> NSButton {
+        let b = NSButton(title: "", target: self, action: action)
         b.isBordered = false
         b.wantsLayer = true
         b.layer?.backgroundColor = color.cgColor
-        b.layer?.cornerRadius = 15
+        b.layer?.cornerRadius = diameter / 2
         b.contentTintColor = fg
-        b.font = .systemFont(ofSize: 12, weight: .bold)
+        b.imagePosition = .imageOnly
+        b.image = symbol(symbolName)
         b.translatesAutoresizingMaskIntoConstraints = false
         b.setContentHuggingPriority(.required, for: .horizontal)
         NSLayoutConstraint.activate([
-            b.widthAnchor.constraint(equalToConstant: 38),
-            b.heightAnchor.constraint(equalToConstant: 30),
+            b.widthAnchor.constraint(equalToConstant: diameter),
+            b.heightAnchor.constraint(equalToConstant: diameter),
         ])
         return b
     }
