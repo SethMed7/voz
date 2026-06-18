@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import Shared
 
 public final class SpeakController: NSObject {
     static private(set) var shared: SpeakController!
@@ -38,7 +39,6 @@ public final class SpeakController: NSObject {
     private var mouseDownPoint = NSPoint.zero
     private var mouseDownMonitor: Any?
     private var mouseUpMonitor: Any?
-    private var escHotKeyRef: EventHotKeyRef?
 
     /// Wire up the read-aloud capability: the Services entry, the read-along queue,
     /// and the ⌃V hotkey. The status item + menu are owned by the app coordinator.
@@ -304,8 +304,7 @@ public final class SpeakController: NSObject {
                               MemoryLayout<EventHotKeyID>.size, nil, &hk)
             let id = hk.id
             DispatchQueue.main.async {
-                if id == 1 { SpeakController.shared.toggleCapture() }
-                else if id == 2 { SpeakController.shared.exitWatching() }
+                if id == 1 { SpeakController.shared.toggleCapture() } // ⌃V; Escape is handled by EscapeKey
             }
             return noErr
         }, 1, &eventType, nil, nil)
@@ -331,23 +330,10 @@ public final class SpeakController: NSObject {
         }
     }
 
-    // While watching, Escape stops watching. A Carbon hotkey (like ⌃V) is used
-    // instead of an NSEvent key monitor because global key monitors need the
-    // separate Input Monitoring permission — this needs nothing beyond what we
-    // already have. It's only registered while watching, so Escape is normal
-    // otherwise. (It does consume Escape while watching, which is the intent.)
-    private func registerEscapeHotKey() {
-        guard escHotKeyRef == nil else { return }
-        let id = EventHotKeyID(signature: OSType(0x766F_7A20), id: 2)
-        RegisterEventHotKey(UInt32(kVK_Escape), 0, id, GetApplicationEventTarget(), 0, &escHotKeyRef)
-    }
-
-    private func unregisterEscapeHotKey() {
-        if let ref = escHotKeyRef {
-            UnregisterEventHotKey(ref)
-            escHotKeyRef = nil
-        }
-    }
+    // While watching, Escape stops watching — claimed from the shared EscapeKey owner so it never
+    // collides with dictation's Esc. Only claimed while watching, so Escape is normal otherwise.
+    private func registerEscapeHotKey() { EscapeKey.shared.claim(self) { [weak self] in self?.exitWatching() } }
+    private func unregisterEscapeHotKey() { EscapeKey.shared.release(self) }
 }
 
 /// Right-click → Services → "Read Aloud with voz". Receives the selection

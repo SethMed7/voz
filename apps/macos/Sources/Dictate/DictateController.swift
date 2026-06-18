@@ -1,5 +1,5 @@
 import AppKit
-import Carbon.HIToolbox
+import Shared
 
 public final class DictateController: NSObject {
     static private(set) var shared: DictateController!
@@ -220,34 +220,10 @@ public final class DictateController: NSObject {
         Overlay.shared.flash(message: "cancelled")
     }
 
-    // MARK: Esc-to-cancel (Carbon hotkey — consumes Esc only while recording, so it's normal otherwise)
+    // MARK: Esc-to-cancel — via the shared EscapeKey owner, so it never collides with read-aloud's Esc.
 
-    private var escHandlerInstalled = false
-    private var escHotKeyRef: EventHotKeyRef?
-
-    private func installEscHandler() {
-        guard !escHandlerInstalled else { return }
-        escHandlerInstalled = true
-        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ -> OSStatus in
-            var hk = EventHotKeyID()
-            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
-                              nil, MemoryLayout<EventHotKeyID>.size, nil, &hk)
-            if hk.id == 9 { DispatchQueue.main.async { DictateController.shared?.cancelRecording() } }
-            return noErr
-        }, 1, &spec, nil, nil)
-    }
-
-    private func registerEsc() {
-        guard escHotKeyRef == nil else { return }
-        installEscHandler()
-        let id = EventHotKeyID(signature: OSType(0x766F_7A45), id: 9) // "vozE"
-        RegisterEventHotKey(UInt32(kVK_Escape), 0, id, GetApplicationEventTarget(), 0, &escHotKeyRef)
-    }
-
-    private func unregisterEsc() {
-        if let ref = escHotKeyRef { UnregisterEventHotKey(ref); escHotKeyRef = nil }
-    }
+    private func registerEsc() { EscapeKey.shared.claim(self) { [weak self] in self?.cancelRecording() } }
+    private func unregisterEsc() { EscapeKey.shared.release(self) }
 
     /// One pass over the whole recorded clip, off the main thread, then clean +
     /// paste. The temp WAV is deleted as soon as we have the text — no audio is
