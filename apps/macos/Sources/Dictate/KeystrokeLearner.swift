@@ -71,7 +71,7 @@ final class KeystrokeLearner {
         case kVK_UpArrow, kVK_DownArrow, kVK_Home, kVK_End, kVK_PageUp, kVK_PageDown, kVK_Escape:
             stop(); return // caret jumps we can't follow → give up
         case kVK_Return, kVK_ANSI_KeypadEnter, kVK_Tab:
-            evaluate(); return // committed — judge now
+            evaluate(); stop(); return // committed — judge now, then stop watching (don't linger to the deadline)
         default:
             guard let chars = e.characters, chars.count == 1, let c = chars.first,
                   c != "\r", c != "\n", c != "\t" else { return }

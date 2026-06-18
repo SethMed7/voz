@@ -1,18 +1,28 @@
 import Foundation
 
-/// Spoken spelling. When you spell a word out loud mid-dictation — "Dhaval, that's D H A V A L" —
-/// voz takes the spelled letters as the truth: it replaces the heard word with the spelled one, drops
-/// the spelling phrase from the text, and learns it *immediately* (you said it on purpose, so it skips
-/// the frequency gate). Future dictations of that word are then auto-corrected everywhere.
+/// Spoken spelling. Say a word, then a cue and the letters — "Dhaval, that's D H A V A L" — and voz
+/// takes the letters as the truth: it replaces the heard word with the spelled one, drops the spelling
+/// phrase, and learns it *immediately* (you said it on purpose, so it skips the frequency gate). Future
+/// dictations of that word are then auto-corrected everywhere.
 ///
 ///   "what's going on Dhaval that's D H A V A L with your work today"
 ///   → "what's going on Dhaval with your work today"   + learns  deval/dhaval → Dhaval
+///
+/// SAFETY: a spelling is recognized ONLY when an explicit cue ("that's", "spelled", "spell"…) sits
+/// right before the letters. Without a cue, a run of single letters is left untouched — so ordinary
+/// speech ("we sell a b c batteries", "J R R Tolkien", grades, stutters) can never be swallowed or,
+/// worse, silently learned into your dictionary.
 enum SpellOut {
-    /// Words that sit between the spoken word and its spelling — stripped from the output.
-    private static let cues: Set<String> = [
-        "that's", "thats", "that", "is", "spelled", "spelt", "spell", "spelling",
-        "as", "in", "capital", "caps", "lowercase", "uppercase", "like", "it",
-    ]
+    private enum Cue { case trigger, caps, lower, connector }
+    private static func cue(_ s: String) -> Cue? {
+        switch s.lowercased() {
+        case "that's", "thats", "spelled", "spelt", "spell", "spelling": return .trigger
+        case "capital", "caps", "uppercase": return .caps
+        case "lowercase": return .lower
+        case "it", "is", "as", "in", "like": return .connector // skippable filler between cue and letters
+        default: return nil
+        }
+    }
 
     /// De-spelled text + the (from → to) rules to learn.
     static func process(_ text: String) -> (text: String, learned: [(from: String, to: String)]) {
@@ -26,27 +36,43 @@ enum SpellOut {
             var letters = ""
             while j < toks.count, let c = singleLetter(toks[j]) { letters.append(c); j += 1 }
 
-            if letters.count >= 3 { // 3+ spelled letters in a row = a spelling, not normal speech
-                while let last = out.last, cues.contains(core(last).lowercased()) { out.removeLast() }
+            if letters.count >= 2, let plan = cueLookback() {
+                out.removeLast(plan.strip) // drop the cue/connector tokens before the letters
                 var heard: String?
                 if let last = out.last, isWord(core(last)) { heard = core(last); out.removeLast() }
-
-                let cased = applyCase(letters, like: heard)
+                let cased = applyCase(letters, upper: plan.upper, lower: plan.lower, like: heard)
                 out.append(cased)
                 let canon = letters.lowercased()
-                if canon != cased { learned.append((canon, cased)) }                 // lock the spelling+casing
+                if canon != cased { learned.append((canon, cased)) }                 // lock the spelling + casing
                 if let h = heard, h.lowercased() != canon { learned.append((h, cased)) } // map the misrecognition
                 i = j
                 continue
             }
             out.append(toks[i]); i += 1
         }
+
+        /// Look back over `out` for cue/connector tokens immediately before the letter run. Returns how
+        /// many to strip + the forced case — but ONLY if a real trigger cue ("that's"/"spelled"/…) is
+        /// present. nil ⇒ not a spelling, leave the letters alone.
+        func cueLookback() -> (strip: Int, upper: Bool, lower: Bool)? {
+            var n = 0, trigger = false, upper = false, lower = false
+            var p = out.count - 1
+            while p >= 0, let k = cue(core(out[p])) {
+                switch k {
+                case .trigger: trigger = true
+                case .caps: upper = true
+                case .lower: lower = true
+                case .connector: break
+                }
+                n += 1; p -= 1
+            }
+            return trigger ? (n, upper, lower) : nil
+        }
         return (out.joined(separator: " "), dedupe(learned))
     }
 
     // MARK: helpers
 
-    /// The single letter a token spells, ignoring surrounding punctuation ("A," → "a"); else nil.
     private static func singleLetter(_ token: String) -> Character? {
         let c = core(token)
         return (c.count == 1 && (c.first?.isLetter ?? false)) ? c.first : nil
@@ -61,11 +87,14 @@ enum SpellOut {
         s.count >= 2 && s.allSatisfy { $0.isLetter || $0 == "'" }
     }
 
-    /// Case the spelled letters: ACRONYM if the heard word was all-caps, otherwise Title case (names).
-    private static func applyCase(_ letters: String, like heard: String?) -> String {
-        let lower = letters.lowercased()
-        if let h = heard, h.count > 1, h == h.uppercased() { return lower.uppercased() }
-        return lower.prefix(1).uppercased() + lower.dropFirst()
+    /// Case the spelled letters: forced upper/lower if you said "capital"/"lowercase"; else ALL-CAPS if
+    /// the heard word already came through all-caps (an acronym), otherwise Title case (names).
+    private static func applyCase(_ letters: String, upper: Bool, lower: Bool, like heard: String?) -> String {
+        let low = letters.lowercased()
+        if upper { return low.uppercased() }
+        if lower { return low }
+        if let h = heard, h.count > 1, h == h.uppercased() { return low.uppercased() }
+        return low.prefix(1).uppercased() + low.dropFirst()
     }
 
     private static func dedupe(_ list: [(String, String)]) -> [(String, String)] {

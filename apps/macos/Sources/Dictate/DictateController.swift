@@ -116,6 +116,8 @@ public final class DictateController: NSObject {
             HotKey.shared.register()
         } else {
             HotKey.shared.unregister()
+            unregisterEsc() // and don't leave Esc consumed if we were recording
+            if let clip = recorder.stop() { try? FileManager.default.removeItem(at: clip.url) }
             state = .idle
             learner.stop(); LearnPill.shared.close()
             Overlay.shared.close()
@@ -177,6 +179,7 @@ public final class DictateController: NSObject {
         }
         recorder.onLevel = { Overlay.shared.updateLevel($0) }
         recorder.start(onError: { [weak self] message in
+            self?.unregisterEsc() // don't leave Esc globally consumed if the mic couldn't start
             self?.state = .idle
             Overlay.shared.flash(message: message)
         })
