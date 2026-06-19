@@ -28,6 +28,9 @@ public final class DictateController: NSObject {
     private var recentTranscripts: [String] = []
     private let maxRecent = 10
 
+    /// The app being dictated INTO, captured at recording start (before focus can change) for per-app stats.
+    private var dictationApp: (bundleId: String?, name: String?)?
+
     /// Whether double-tap ⌃ starts a hands-free dictation. On by default; toggle in the menu.
     private var handsFreeEnabled: Bool {
         get { UserDefaults.standard.object(forKey: "handsFreeEnabled") as? Bool ?? true }
@@ -94,6 +97,10 @@ public final class DictateController: NSObject {
         let engine = NSMenuItem(title: "Engine: \(Transcribers.activeEngineName())", action: nil, keyEquivalent: "")
         engine.isEnabled = false
         items.append(engine)
+
+        let insights = NSMenuItem(title: "Insights…", action: #selector(openInsights), keyEquivalent: "i")
+        insights.target = self
+        items.append(insights)
 
         // Recovery: if a dictation pasted somewhere wrong, grab it here instead of re-saying it.
         if let last = recentTranscripts.first {
@@ -178,6 +185,8 @@ public final class DictateController: NSObject {
                               toggleLearn: { [weak self] in self?.toggleLearn() }) // flips + keeps the menu in sync
     }
 
+    @objc private func openInsights() { InsightsWindow.shared.open() }
+
     // MARK: recent dictations — a safety net for a mis-targeted paste
 
     private func remember(_ text: String) {
@@ -229,6 +238,9 @@ public final class DictateController: NSObject {
     }
 
     private func beginRecording() {
+        // Capture the app being dictated into NOW, before anything can change focus — the per-app signal.
+        let app = NSWorkspace.shared.frontmostApplication
+        dictationApp = (app?.bundleIdentifier, app?.localizedName)
         learner.stop(); LearnPill.shared.close() // a new dictation supersedes any pending learn prompt
         registerEsc() // Esc cancels while recording
         state = .listening
@@ -302,6 +314,12 @@ public final class DictateController: NSObject {
     /// ever persisted.
     private func transcribeAndDeliver(_ clip: Recorder.Result) {
         Overlay.shared.showThinking()
+        // Snapshot the metrics deliver() doesn't otherwise have — the clip's duration (→WPM), the
+        // engine, and the app captured at recording start — so per-dictation stats can be recorded.
+        let ctx = DictationContext(durationMs: Int(clip.duration * 1000),
+                                   engine: Transcribers.activeEngineName(),
+                                   appBundleId: dictationApp?.bundleId,
+                                   appName: dictationApp?.name)
         let wav = clip.url
         Transcribers.run(wav, clipDuration: clip.duration) { [weak self] text in
             try? FileManager.default.removeItem(at: wav)
@@ -318,7 +336,7 @@ public final class DictateController: NSObject {
                 let cleaned = Lexicon.shared.apply(cleaner.clean(spell.text)) // cleanup, then your dictionary
                 DispatchQueue.main.async {
                     for rule in spell.learned { Lexicon.shared.learnExplicit(from: rule.from, to: rule.to) }
-                    self.deliver(cleaned)
+                    self.deliver(cleaned, ctx: ctx)
                     if let word = spell.learned.first?.to { // confirm what spelling was locked in
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                             LearnPill.shared.showAdded(word: word) { spell.learned.forEach { Lexicon.shared.forget($0.from) } }
@@ -329,13 +347,14 @@ public final class DictateController: NSObject {
         }
     }
 
-    private func deliver(_ cleaned: String) {
+    private func deliver(_ cleaned: String, ctx: DictationContext) {
         state = .idle
         guard !cleaned.isEmpty else {
             Overlay.shared.flash(message: "nothing heard")
             return
         }
-        remember(cleaned) // keep it retrievable in case the paste lands somewhere wrong
+        remember(cleaned)                              // in-memory safety net for a mis-targeted paste
+        InsightStore.shared.record(cleaned, ctx: ctx)  // local stats + history for the Insights dashboard
         if Paster.paste(cleaned) {
             Overlay.shared.showTyped()
             startLearning(pasted: cleaned)
