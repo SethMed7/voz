@@ -208,6 +208,40 @@ public final class InsightStore: ObservableObject {
         perApp.map { ($0.id, $0.name) }
     }
 
+    // MARK: chart series (last 30 days)
+
+    struct DayStat: Identifiable { let id: String; let date: Date; let value: Double }
+
+    private func lastDays(_ n: Int) -> [(date: Date, key: String)] {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        return (0..<n).reversed().compactMap { offset in
+            guard let d = cal.date(byAdding: .day, value: -offset, to: today) else { return nil }
+            return (d, Self.dayFormatter.string(from: d))
+        }
+    }
+
+    /// Words dictated per day (zeros included so the bar chart shows gaps).
+    var wordsPerDay: [DayStat] {
+        var map: [String: Int] = [:]
+        for e in dictations { map[e.day, default: 0] += e.words }
+        return lastDays(30).map { DayStat(id: $0.key, date: $0.date, value: Double(map[$0.key] ?? 0)) }
+    }
+
+    /// Average WPM per day — only days you actually dictated (so the trend line connects real points).
+    var wpmPerDay: [DayStat] {
+        var words: [String: Int] = [:], ms: [String: Int] = [:]
+        for e in dictations where e.durationMs > 0 {
+            words[e.day, default: 0] += e.words
+            ms[e.day, default: 0] += e.durationMs
+        }
+        return lastDays(30).compactMap { day in
+            let minutes = Double(ms[day.key] ?? 0) / 60_000.0
+            guard minutes > 0 else { return nil }
+            return DayStat(id: day.key, date: day.date, value: (Double(words[day.key] ?? 0) / minutes).rounded())
+        }
+    }
+
     // MARK: persistence
 
     private func load() {

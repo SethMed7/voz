@@ -45,9 +45,7 @@ struct InsightsRootView: View {
             Group {
                 switch nav.section {
                 case .home: HomeView(store: store)
-                case .insights: ComingSoon(icon: "chart.bar",
-                                           title: "Insights",
-                                           subtitle: "Words per day, WPM over time, and where you dictate most.")
+                case .insights: InsightsView(store: store)
                 case .dictionary: DictionaryView()
                 case .history: HistoryView(store: store)
                 case .data: DataPrivacyView(store: store)
