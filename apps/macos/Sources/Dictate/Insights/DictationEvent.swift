@@ -4,7 +4,7 @@ import Foundation
 /// saved; this is the cleaned text (empty in stats-only mode) plus the metrics that power the
 /// dashboard. `day` is precomputed in the user's LOCAL timezone so streak math is a plain calendar
 /// walk that can't drift at midnight/DST.
-struct DictationEvent: Codable, Identifiable {
+struct DictationEvent: Codable, Identifiable, Hashable {
     let id: String
     let ts: Double            // Unix epoch seconds, UTC — the source of truth for time
     let day: String           // "yyyy-MM-dd" in the user's local timezone — the streak / per-day key

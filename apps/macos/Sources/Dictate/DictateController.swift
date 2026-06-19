@@ -322,10 +322,10 @@ public final class DictateController: NSObject {
                                    appName: dictationApp?.name)
         let wav = clip.url
         Transcribers.run(wav, clipDuration: clip.duration) { [weak self] text in
-            try? FileManager.default.removeItem(at: wav)
-            guard let self else { return }
+            guard let self else { try? FileManager.default.removeItem(at: wav); return }
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
+                try? FileManager.default.removeItem(at: wav) // nothing heard — don't keep the audio
                 self.state = .idle
                 Overlay.shared.flash(message: "nothing heard")
                 return
@@ -336,7 +336,8 @@ public final class DictateController: NSObject {
                 let cleaned = Lexicon.shared.apply(cleaner.clean(spell.text)) // cleanup, then your dictionary
                 DispatchQueue.main.async {
                     for rule in spell.learned { Lexicon.shared.learnExplicit(from: rule.from, to: rule.to) }
-                    self.deliver(cleaned, ctx: ctx)
+                    self.deliver(cleaned, ctx: ctx, audio: wav) // record copies the recording (when saving is on)
+                    try? FileManager.default.removeItem(at: wav) // then drop the temp WAV
                     if let word = spell.learned.first?.to { // confirm what spelling was locked in
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                             LearnPill.shared.showAdded(word: word) { spell.learned.forEach { Lexicon.shared.forget($0.from) } }
@@ -347,14 +348,14 @@ public final class DictateController: NSObject {
         }
     }
 
-    private func deliver(_ cleaned: String, ctx: DictationContext) {
+    private func deliver(_ cleaned: String, ctx: DictationContext, audio: URL?) {
         state = .idle
         guard !cleaned.isEmpty else {
             Overlay.shared.flash(message: "nothing heard")
             return
         }
-        remember(cleaned)                              // in-memory safety net for a mis-targeted paste
-        InsightStore.shared.record(cleaned, ctx: ctx)  // local stats + history for the Insights dashboard
+        remember(cleaned)                                                // in-memory safety net for a mis-targeted paste
+        InsightStore.shared.record(cleaned, ctx: ctx, audioSource: audio) // local stats + history (+ saved recording)
         if Paster.paste(cleaned) {
             Overlay.shared.showTyped()
             startLearning(pasted: cleaned)

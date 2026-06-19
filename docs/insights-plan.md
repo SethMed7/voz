@@ -31,11 +31,23 @@ off, `text` is empty but every metric still lands (stats-only mode).
 5. **Local AI insights (optional)** — weekly summary, suggested dictionary words, nudges; reuses the
    on-device Ollama/llama.cpp path; cached; master switch (default-off).
 
-## Privacy
-Audio never saved (temp WAV deleted the moment text exists). Transcripts persist **local-only**
-(`~/.voz`, `0600`), with a **stats-only toggle**, **secure-field / password-manager exclusion** (a
-spoken password is never written), **Clear / Export**, and owner-only perms. The README's
-"transcripts are never written to disk" claim must be rewritten when Phase 3 ships the controls.
+## `~/.voz` layout (all local, owner-only)
+```
+~/.voz/
+  history.json      append-only JSON-Lines event log        (0600)
+  audio/<id>.wav    the saved recording for each dictation   (0600)
+  dictionary.json   the user dictionary (Lexicon)            (existing)
+```
+
+## Privacy — note the change
+Phase 2 adds **saving the recording** so you can replay a dictation and click in to correct it /
+train the dictionary. This is a deliberate departure: voz historically deleted all audio. Now, when
+**Save recording** is on (a toggle, default on for this user), the WAV is copied to `~/.voz/audio/`
+**local-only** — never uploaded. When off, audio is deleted as before. Transcripts likewise persist
+local-only (`~/.voz`, `0600`) with a **stats-only toggle**, **secure-field / password-manager
+exclusion**, **Clear / Export**, and owner-only perms. **The README/brand "no recording is ever
+saved" claim MUST be rewritten before this branch merges to `main`** — that lands with the Phase 3
+Data & Privacy controls.
 
 ## Decisions (locked)
 JSONL store · History default-on · 5-section sidebar (Home / Insights / Dictionary / History +

@@ -45,9 +45,7 @@ struct InsightsRootView: View {
                 case .dictionary: ComingSoon(icon: "character.book.closed",
                                              title: "Dictionary",
                                              subtitle: "Your learned spellings & pronunciations, redesigned here. For now: menu → Dictionary…")
-                case .history: ComingSoon(icon: "clock.arrow.circlepath",
-                                          title: "History",
-                                          subtitle: "A searchable feed of every dictation — the text, the app it went into, when.")
+                case .history: HistoryView(store: store)
                 }
             }
             .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
@@ -95,12 +93,50 @@ struct HomeView: View {
                     }
                     .background(VozTheme.ink, in: RoundedRectangle(cornerRadius: 14))
                     .overlay(RoundedRectangle(cornerRadius: 14).stroke(VozTheme.line, lineWidth: 1))
+
+                    if !store.perApp.isEmpty {
+                        Text("Where you dictate")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(VozTheme.mist).textCase(.uppercase)
+                            .padding(.top, 8)
+                        let maxWords = store.perApp.first?.words ?? 1
+                        VStack(spacing: 12) {
+                            ForEach(store.perApp.prefix(5)) { app in
+                                PerAppRow(app: app, maxWords: maxWords)
+                            }
+                        }
+                        .padding(16)
+                        .background(VozTheme.ink, in: RoundedRectangle(cornerRadius: 14))
+                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(VozTheme.line, lineWidth: 1))
+                    }
                 }
             }
             .padding(28)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(VozTheme.black)
+    }
+}
+
+struct PerAppRow: View {
+    let app: InsightStore.AppUsage
+    let maxWords: Int
+    var body: some View {
+        HStack(spacing: 10) {
+            AppIconView(bundleId: app.id, size: 18)
+            Text(app.name).font(.system(size: 12)).foregroundStyle(VozTheme.textHi)
+                .frame(width: 120, alignment: .leading).lineLimit(1)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(VozTheme.line)
+                    Capsule().fill(VozTheme.electric)
+                        .frame(width: max(6, geo.size.width * CGFloat(app.words) / CGFloat(max(1, maxWords))))
+                }
+            }
+            .frame(height: 8)
+            Text("\(app.words)").font(.system(size: 11)).foregroundStyle(VozTheme.mist)
+                .frame(width: 52, alignment: .trailing)
+        }
     }
 }
 
