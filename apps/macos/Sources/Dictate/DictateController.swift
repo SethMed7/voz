@@ -40,7 +40,7 @@ public final class DictateController: NSObject {
     public override init() { super.init() }
 
     /// Whether dictation is on at all. When off, the hold-to-talk hotkey is never registered,
-    /// so ⌃⌥ does nothing and the Microphone / Accessibility prompts are never reached — the
+    /// so Fn does nothing and the Microphone / Accessibility prompts are never reached — the
     /// permission for a capability is only ever asked once you've turned it on. On by default.
     private var dictateEnabled: Bool {
         get { UserDefaults.standard.object(forKey: "dictateEnabled") as? Bool ?? true }
@@ -68,7 +68,7 @@ public final class DictateController: NSObject {
 
         HotKey.shared.onPress = { [weak self] in self?.hotKeyPressed() }
         HotKey.shared.onRelease = { [weak self] in self?.hotKeyReleased() }
-        HotKey.shared.onDoubleTapControl = { [weak self] in self?.handsFreeToggle() }
+        HotKey.shared.onDoubleTap = { [weak self] in self?.handsFreeToggle() }
         if dictateEnabled { HotKey.shared.register() } // off → no monitor, no permission prompt
     }
 
@@ -88,7 +88,7 @@ public final class DictateController: NSObject {
     /// (no engine row, no dictionary) so the menu reads as "this mode is parked".
     public func menuItems() -> [NSMenuItem] {
         var items: [NSMenuItem] = []
-        let toggle = NSMenuItem(title: "Dictate — hold ⌃ + ⌥ to record", action: #selector(toggleEnabled), keyEquivalent: "")
+        let toggle = NSMenuItem(title: "Dictate — hold Fn to record", action: #selector(toggleEnabled), keyEquivalent: "")
         toggle.target = self
         toggle.state = dictateEnabled ? .on : .off
         items.append(toggle)
@@ -129,7 +129,7 @@ public final class DictateController: NSObject {
             ai.state = Cleaners.llmEnabled ? .on : .off
             items.append(ai)
         }
-        let hands = NSMenuItem(title: "Hands-free — double-tap ⌃", action: #selector(toggleHandsFree), keyEquivalent: "")
+        let hands = NSMenuItem(title: "Hands-free — double-tap Fn", action: #selector(toggleHandsFree), keyEquivalent: "")
         hands.target = self
         hands.state = handsFreeEnabled ? .on : .off
         items.append(hands)
@@ -218,7 +218,7 @@ public final class DictateController: NSObject {
         s.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " ")
     }
 
-    // Hold ⌃+⌥: press starts, release stops.
+    // Hold Fn: press starts, release stops.
     private func hotKeyPressed() {
         guard state == .idle else { return } // debounce key-repeat / re-press
         handsFree = false
@@ -229,8 +229,8 @@ public final class DictateController: NSObject {
         finishRecording()
     }
 
-    /// Double-tap ⌃ — hands-free mode: the first toggle starts recording (no need to hold), the next
-    /// stops and delivers. Lets you dictate without keeping keys down.
+    /// Double-tap Fn — hands-free mode: the first toggle starts recording (no need to hold), the next
+    /// stops and delivers. Lets you dictate without keeping the key down.
     private func handsFreeToggle() {
         guard dictateEnabled, handsFreeEnabled else { return }
         if state == .idle { handsFree = true; beginRecording() }
@@ -258,7 +258,7 @@ public final class DictateController: NSObject {
             self?.state = .idle
             Overlay.shared.flash(message: message)
         })
-        // Safety net: if a ⌃⌥ key-up is ever dropped, force-finish so Esc + the mic can't wedge forever.
+        // Safety net: if a Fn key-up is ever dropped, force-finish so Esc + the mic can't wedge forever.
         let watchdog = DispatchWorkItem { [weak self] in
             guard let self, self.state == .listening else { return }
             self.finishRecording()

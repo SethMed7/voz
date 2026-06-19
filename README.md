@@ -12,7 +12,7 @@
 one idea: **speak to type, select to hear.** It runs **100% on your Mac**: no cloud, no accounts, no
 API keys, and **no recording is ever saved.**
 
-- 🎙 **Dictate** — hold **⌃ + ⌥** (or **double-tap ⌃** for hands-free), speak, release. voz
+- 🎙 **Dictate** — hold **Fn** (or **double-tap Fn** for hands-free), speak, release. voz
   transcribes on-device, cleans it up — drops fillers ("um", "uh") and false starts, adds punctuation, formats
   numbers and dates — and types it where your cursor is, in any app.
 - 🔊 **Read aloud** — select text anywhere and press **⌃V**. voz reads it in a warm neural voice,
@@ -35,16 +35,17 @@ on-device engine, so it lands in well under a second — and nothing ever leaves
 - **Genuinely clean output** — an optional on-device LLM removes fillers and false starts, adds punctuation, and formats numbers, currency, and dates (Wispr-class — still no cloud).
 - **Near-instant** — a warm NVIDIA Parakeet engine transcribes in ~0.08 s instead of reloading the model every clip.
 - **Learns your words** — correct a name a couple of times, or just spell it out loud (*"Dhaval, that's D H A V A L"*), and it sticks in your dictionary, everywhere — even in terminals.
-- **Hands-free or hold** — double-tap **⌃** to toggle, or hold **⌃ + ⌥**; **Esc** cancels mid-dictation.
+- **Hands-free or hold** — double-tap **Fn** to toggle, or hold **Fn**; **Esc** cancels mid-dictation.
 - **Reads back, too** — select any text + **⌃V** for warm, on-device neural read-aloud that follows along word by word.
 
 ## The two modes
 
 ### Dictate (voice → text)
-Hold **⌃ + ⌥** and talk; a small electric-blue waveform reacts bottom-center while the mic is hot —
+Hold **Fn** and talk; a small electric-blue waveform reacts bottom-center while the mic is hot —
 pause to think as long as you like, it records the whole hold and transcribes once on
-release (a pause is never a stop). Prefer no hands? **Double-tap ⌃** to start dictating and
-double-tap again to stop. The cleaned text lands in the focused app. It learns
+release (a pause is never a stop). Prefer no hands? **Double-tap Fn** to start dictating and
+double-tap again to stop. (If Fn opens emoji or Apple Dictation, set **System Settings ▸ Keyboard ▸
+“Press 🌐 key to” → Do Nothing** so it's free for voz.) The cleaned text lands in the focused app. It learns
 your spellings as you go (`myela` → `Myela`) via a local dictionary you control — and the
 same dictionary teaches **read aloud** how to pronounce those words. If a paste ever lands in the
 wrong place, the last several dictations are kept (in memory) under **menu → Copy Last Dictation**
@@ -76,7 +77,7 @@ its hotkey or asks for anything at all. When on, each mode lights up exactly the
 | You use… | Microphone | Speech Recognition | Accessibility |
 | --- | :--: | :--: | :--: |
 | **Read aloud** (⌃V) | – | – | ✓ (to read your selection) |
-| **Dictate** (hold ⌃+⌥) | ✓ | only if the Apple fallback engine is used | ✓ (to type the result) |
+| **Dictate** (hold Fn) | ✓ | only if the Apple fallback engine is used | ✓ (to type the result) |
 | **Learn-from-edits** dictionary | – | – | ✓ (to spot your in-place fixes) |
 
 If you only ever read aloud, voz never touches your microphone.
