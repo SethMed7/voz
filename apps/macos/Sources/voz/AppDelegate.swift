@@ -28,6 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dictate.onIcon = { [weak self] p, symbol in self?.dictateIcon = (p, symbol); self?.applyIcon() }
         speak.onMenuRebuild = { [weak self] in self?.rebuildMenu() }
         dictate.onMenuRebuild = { [weak self] in self?.rebuildMenu() }
+        // Log read-aloud usage to Insights (the store lives in the Dictate module; route reads to it).
+        speak.onRead = { text, bid, name, voice in
+            InsightStore.shared.recordRead(text: text, appBundleId: bid, appName: name, voice: voice)
+        }
 
         speak.start()
         dictate.start()

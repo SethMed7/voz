@@ -11,6 +11,10 @@ public final class SpeakController: NSObject {
     public var onIcon: ((Int, String) -> Void)?
     public var onMenuRebuild: (() -> Void)?
 
+    /// Fired when a selection is read aloud (text, source app, voice). The app coordinator routes it
+    /// to Insights — read-aloud lives in a different module than the stats store.
+    public var onRead: ((_ text: String, _ appBundleId: String?, _ appName: String?, _ voice: String) -> Void)?
+
     private var started = false
 
     /// Whether read-aloud is on at all. When off, ⌃V is unregistered and the Services entry
@@ -245,6 +249,8 @@ public final class SpeakController: NSObject {
         Overlay.shared.present(watching: false)
         Overlay.shared.center() // always start bottom-center
         registerEscapeHotKey()  // Esc stops a one-shot read too
+        let app = NSWorkspace.shared.frontmostApplication
+        onRead?(text, app?.bundleIdentifier, app?.localizedName, Speaker.shared.voiceId)
         Speaker.shared.speakNow(text)
     }
 
@@ -331,6 +337,8 @@ public final class SpeakController: NSObject {
             self.cancelIdleClose() // a new highlight keeps the session alive
             Overlay.shared.present(watching: true)
             Speaker.shared.enqueue(toRead)
+            let app = NSWorkspace.shared.frontmostApplication // where you read it from
+            self.onRead?(toRead, app?.bundleIdentifier, app?.localizedName, Speaker.shared.voiceId)
         }
     }
 

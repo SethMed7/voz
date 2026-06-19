@@ -80,9 +80,9 @@ struct HistoryRow: View {
                 .font(.system(size: 11))
             }
             Spacer(minLength: 0)
-            if store.audioURL(for: event) != nil {
-                Image(systemName: "waveform").font(.system(size: 12)).foregroundStyle(VozTheme.mist)
-            }
+            Image(systemName: event.kind == "read" ? "speaker.wave.2.fill"
+                                                    : (store.audioURL(for: event) != nil ? "waveform" : "mic.fill"))
+                .font(.system(size: 12)).foregroundStyle(VozTheme.mist)
         }
         .padding(.vertical, 4)
     }
@@ -111,9 +111,9 @@ struct DictationDetailView: View {
                 HStack(spacing: 12) {
                     AppIconView(bundleId: event.appBundleId, size: 30)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(event.appName ?? "Dictation").font(.system(size: 16, weight: .semibold)).foregroundStyle(VozTheme.textHi)
-                        Text("\(RelTime.string(event.date)) · \(event.words) words · \(event.wpm) wpm · \(event.engine)")
-                            .font(.system(size: 11)).foregroundStyle(VozTheme.mist)
+                        Text(event.appName ?? (event.kind == "read" ? "Read aloud" : "Dictation"))
+                            .font(.system(size: 16, weight: .semibold)).foregroundStyle(VozTheme.textHi)
+                        Text(metaLine).font(.system(size: 11)).foregroundStyle(VozTheme.mist)
                     }
                     Spacer()
                 }
@@ -131,7 +131,7 @@ struct DictationDetailView: View {
                     .padding(12)
                     .background(VozTheme.ink, in: RoundedRectangle(cornerRadius: 10))
                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(VozTheme.line, lineWidth: 1))
-                } else {
+                } else if event.kind == "dictate" {
                     Text("No saved recording for this one.").font(.system(size: 12)).foregroundStyle(VozTheme.mist)
                 }
 
@@ -190,6 +190,13 @@ struct DictationDetailView: View {
 
     private func section(_ title: String) -> some View {
         Text(title).font(.system(size: 13, weight: .semibold)).foregroundStyle(VozTheme.mist).textCase(.uppercase)
+    }
+
+    private var metaLine: String {
+        if event.kind == "read" {
+            return "\(RelTime.string(event.date)) · read aloud · \(event.words) words · \(event.engine)"
+        }
+        return "\(RelTime.string(event.date)) · \(event.words) words · \(event.wpm) wpm · \(event.engine)"
     }
 }
 

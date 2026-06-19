@@ -6,8 +6,8 @@ import AppKit
 ///   dictionary.json — the user dictionary (owned by Lexicon)
 /// Loaded into memory; mirrors the dependency-free on-disk pattern Lexicon already uses. Everything
 /// is local — never uploaded.
-final class InsightStore: ObservableObject {
-    static let shared = InsightStore()
+public final class InsightStore: ObservableObject {
+    public static let shared = InsightStore()
 
     @Published private(set) var events: [DictationEvent] = []
 
@@ -74,6 +74,26 @@ final class InsightStore: ObservableObject {
         s.split { $0 == " " || $0 == "\n" || $0 == "\t" || $0 == "\r" }.count
     }
 
+    /// Log a read-aloud selection (kind "read"). No recording duration (it's TTS), so it never affects
+    /// WPM. Public so the read-aloud side (a separate module) can route reads in via the app coordinator.
+    public func recordRead(text: String, appBundleId: String?, appName: String?, voice: String) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        let e = DictationEvent(
+            id: UUID().uuidString,
+            ts: Date().timeIntervalSince1970,
+            day: Self.dayFormatter.string(from: Date()),
+            text: historyEnabled ? t : "",
+            words: Self.wordCount(t),
+            durationMs: 0,
+            appBundleId: appBundleId,
+            appName: appName,
+            engine: voice,
+            kind: "read")
+        events.append(e)
+        appendLine(e)
+    }
+
     // MARK: edit / delete (used from the History detail — "go train it")
 
     /// The saved recording for an event, if audio-saving kept it.
@@ -100,7 +120,10 @@ final class InsightStore: ObservableObject {
 
     // MARK: derived stats
 
-    var totalWords: Int { events.reduce(0) { $0 + $1.words } }
+    var dictations: [DictationEvent] { events.filter { $0.kind == "dictate" } }
+    var reads: [DictationEvent] { events.filter { $0.kind == "read" } }
+    var totalWords: Int { dictations.reduce(0) { $0 + $1.words } }   // words you dictated
+    var wordsRead: Int { reads.reduce(0) { $0 + $1.words } }         // words read aloud
 
     var dayStreak: Int {
         guard !events.isEmpty else { return 0 }
@@ -120,14 +143,15 @@ final class InsightStore: ObservableObject {
     }
 
     var avgWPM: Int {
-        let timed = events.filter { $0.durationMs > 0 }
+        let timed = events.filter { $0.kind == "dictate" && $0.durationMs > 0 }
         let minutes = Double(timed.reduce(0) { $0 + $1.durationMs }) / 60_000.0
         guard minutes > 0 else { return 0 }
         return Int((Double(timed.reduce(0) { $0 + $1.words }) / minutes).rounded())
     }
 
-    var totalWordsCompact: String {
-        let n = totalWords
+    var totalWordsCompact: String { Self.compact(totalWords) }
+    var wordsReadCompact: String { Self.compact(wordsRead) }
+    static func compact(_ n: Int) -> String {
         if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
         if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }
         return "\(n)"
@@ -137,7 +161,7 @@ final class InsightStore: ObservableObject {
     struct AppUsage: Identifiable { let id: String; let name: String; let words: Int; let count: Int }
     var perApp: [AppUsage] {
         var map: [String: (name: String, words: Int, count: Int)] = [:]
-        for e in events {
+        for e in events where e.kind == "dictate" {
             let key = e.appBundleId ?? e.appName ?? "Unknown"
             var cur = map[key] ?? (e.appName ?? key, 0, 0)
             cur.words += e.words; cur.count += 1

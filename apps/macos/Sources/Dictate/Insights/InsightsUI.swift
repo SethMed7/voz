@@ -70,10 +70,11 @@ struct HomeView: View {
                     .font(.system(size: 26, weight: .bold))
                     .foregroundStyle(VozTheme.textHi)
 
-                HStack(spacing: 16) {
-                    StatCard(value: store.totalWordsCompact, label: "total words")
+                HStack(spacing: 14) {
+                    StatCard(value: store.totalWordsCompact, label: "words dictated")
                     StatCard(value: "\(store.avgWPM)", label: "wpm")
-                    StatCard(value: "\(store.dayStreak)", label: store.dayStreak == 1 ? "day streak" : "day streak")
+                    StatCard(value: "\(store.dayStreak)", label: "day streak")
+                    StatCard(value: store.wordsReadCompact, label: "words read")
                 }
 
                 if store.events.isEmpty {
