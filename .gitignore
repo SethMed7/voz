@@ -1,6 +1,19 @@
 .DS_Store
 .build/
 build/
+dist/
 *.icns
 node_modules/
 log.txt
+
+# Secrets & signing — NEVER commit these (they stay in Keychain / env only)
+*.p12          # exported signing private keys
+*.p8           # App Store Connect API keys (notarization)
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+.env
+.env.*
+notarize.cfg
+secrets.*

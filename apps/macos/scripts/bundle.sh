@@ -16,6 +16,12 @@ cp Info.plist "$APP/Contents/Info.plist"
 # username into the public binary. Must run before codesign (it edits the binary).
 strip -S "$APP/Contents/MacOS/voz"
 
+# Bundle the setup + bootstrap scripts so a DOWNLOADED app can install the optional engines
+# itself (menu → "Set up better engines…"). They're sealed by the signature below.
+mkdir -p "$APP/Contents/Resources/scripts"
+cp scripts/bootstrap.sh scripts/setup-*.sh "$APP/Contents/Resources/scripts/" 2>/dev/null || true
+chmod +x "$APP/Contents/Resources/scripts/"*.sh 2>/dev/null || true
+
 # App icon: media/icon.png (1024px) -> voz.icns, when present.
 if [ -f media/icon.png ]; then
   ICONSET="build/voz.iconset"

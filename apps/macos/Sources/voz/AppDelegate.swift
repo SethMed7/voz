@@ -3,7 +3,7 @@ import Speak
 import Dictate
 
 /// voz — the voice layer for your Mac. One menu-bar app, two capabilities:
-///   • Dictate — hold ⌃⌥, speak, release; the cleaned text is typed where your cursor is.
+///   • Dictate — hold Fn, speak, release; the cleaned text is typed where your cursor is.
 ///   • Read aloud — select text anywhere, press ⌃V; voz reads it and follows along.
 ///
 /// Each capability is a self-contained controller from its own module. The app owns the
@@ -70,9 +70,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         dictate.menuItems().forEach { menu.addItem($0) }
         menu.addItem(.separator())
 
+        let setup = NSMenuItem(title: "Set up better engines…", action: #selector(runBootstrap), keyEquivalent: "")
+        setup.target = self
+        menu.addItem(setup)
+        menu.addItem(.separator())
+
         let quit = NSMenuItem(title: "Quit voz", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
 
         statusItem.menu = menu
+    }
+
+    /// Run the transparent, consent-based bootstrap (capability check + optional on-device engines)
+    /// VISIBLY in Terminal, so the user sees and approves every step. Prefers the copy bundled in the
+    /// app (a downloaded .app) and falls back to the repo checkout. Uses a throwaway .command so no
+    /// Automation/Apple-Events permission is needed.
+    @objc private func runBootstrap() {
+        let fm = FileManager.default
+        let bundled = Bundle.main.resourceURL?.appendingPathComponent("scripts/bootstrap.sh").path
+        let repo = "\(fm.homeDirectoryForCurrentUser.path)/voz/apps/macos/scripts/bootstrap.sh"
+        let script = (bundled.flatMap { fm.fileExists(atPath: $0) ? $0 : nil }) ?? repo
+        guard fm.fileExists(atPath: script) else { return }
+        let cmd = fm.temporaryDirectory.appendingPathComponent("voz-setup.command")
+        try? "#!/bin/sh\nclear\nsh \"\(script)\"\necho; echo 'You can close this window.'\n"
+            .write(to: cmd, atomically: true, encoding: .utf8)
+        try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cmd.path)
+        NSWorkspace.shared.open(cmd) // opens in Terminal and runs it
     }
 }
