@@ -4,9 +4,8 @@
 # OWN engine: a small open-weight model (Qwen2.5-1.5B-Instruct, Apache-2.0) run via MLX (Apple's Metal
 # framework) and kept warm in a tiny loopback server — the same warm-server pattern voz uses for
 # Parakeet dictation. Apple Silicon only; Intel Macs fall back to a self-contained llama.cpp. The model
-# is PINNED (everyone gets the same cleanup) and downloaded only with your consent. Works from a
-# checkout OR standalone:
-#   curl -fsSL https://raw.githubusercontent.com/SethMed7/voz/main/apps/macos/scripts/setup-cleaner.sh | sh
+# is PINNED (everyone gets the same cleanup) and downloaded only with your consent.
+# Run in-place by the app's "Set up better engines…"; not meant to be run standalone.
 set -e
 
 DIR="$HOME/.voz"

@@ -3,7 +3,7 @@
 <img src="apps/macos/media/logo.png" alt="voz — the voice layer for your Mac" width="720">
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-2E74FF)](LICENSE)
-[![Platform](https://img.shields.io/badge/macOS-13%2B-161520)](#install)
+[![Platform](https://img.shields.io/badge/macOS-13%2B-161520)](#download)
 [![Privacy](https://img.shields.io/badge/voice-on--device-2E74FF)](#privacy)
 
 </div>
@@ -28,8 +28,7 @@ Accessibility the first time you use each mode.
 
 Want the *premium* on-device engines (sharper dictation, warmer voices, LLM polish)? Open
 **menu → "Set up better engines…"** — a transparent setup that checks your Mac and **asks before
-installing anything**. Nothing is required; nothing happens without your yes. Prefer to build it
-yourself? See [Install from source](#install-from-source).
+installing anything**. Nothing is required; nothing happens without your yes.
 
 ## See it work
 
@@ -112,20 +111,18 @@ its hotkey or asks for anything at all. When on, each mode lights up exactly the
 
 If you only ever read aloud, voz never touches your microphone.
 
-## Install from source
+## Development
 
-Most people should just [download the `.dmg`](#download). To build it yourself:
+**To use voz, [download the `.dmg`](#download) — that's the only install.** This section is just for
+contributors hacking on the app:
 
 ```sh
-# build + install to /Applications, then launch
-cd apps/macos && sh scripts/install.sh
+# build + run locally from a checkout
+cd apps/macos && sh scripts/bundle.sh && open build/voz.app
 ```
 
-The first time you use each mode, macOS prompts for the permission above. With a stable
-signing identity those grants carry across updates. Optional premium engines install via
-**menu → "Set up better engines…"** or `sh scripts/bootstrap.sh` (capability-checked, asks first).
-
-**Maintainer — cut a release:** `sh scripts/release.sh` builds a Developer-ID-signed, **notarized**
+Optional premium engines install from the app's **menu → "Set up better engines…"** (capability-checked,
+asks first). **Cut a release:** `sh scripts/release.sh` builds a Developer-ID-signed, **notarized**
 `.dmg` in `dist/` (needs a Developer ID cert + a `voz-notary` notarytool profile in your Keychain;
 no secrets ever live in the repo), then `gh release create v<ver> dist/voz-<ver>.dmg`.
 
@@ -159,35 +156,22 @@ Apple APIs), so only the app *shell* is macOS-specific.
   discarded in favor of the deterministic result, and it falls back the same way if the model is
   missing or stalls.
 
-These premium layers are all optional and fully on-device. Enable them with
-`sh scripts/setup-kokoro.sh` (Kokoro voices), `sh scripts/setup-kokoro-server.sh` (the warm
-read-aloud server — consistent low-latency reads), `sh scripts/setup-helper.sh` (Parakeet + the
-canonical cleaner), `sh scripts/setup-asr.sh` (the warm Parakeet server — near-instant
-transcription), and `sh scripts/setup-cleaner.sh` (the LLM polish — a venv with `mlx-lm` plus the
-consented model download). The on-device homes install under `~/.voz`, and an existing
+These premium layers are all optional and fully on-device. Install them from the app's **menu →
+"Set up better engines…"**, which checks your Mac and asks before each step — Kokoro neural voices
+and the warm read-aloud server, Parakeet dictation and its warm server, and the MLX LLM polish (a
+venv with `mlx-lm` plus the consented model download). The on-device homes install under `~/.voz`, and an existing
 `~/.leelo` / `~/.dictado` install is migrated in place (no model re-download). Toggle the polish
 under **menu → Dictate → "Polish with AI"**; pin a different model with `VOZ_LLM_MODEL=<mlx repo>`.
 
-## Permissions
+## What installs, and where
 
-voz asks macOS for a permission **only the first time you use the feature that needs it** — never
-up front, and never anything it doesn't use. Grant or revoke any of them in **System Settings ▸
-Privacy & Security**.
-
-- **Microphone** — to hear you while you *hold* the dictation hotkey. The audio is transcribed
-  on-device and never saved.
-- **Accessibility** — to paste the finished text into whatever app you're typing in, and
-  (optionally) to notice spelling fixes you make so it can learn your words.
-- **Speech Recognition** — only for Apple's built-in on-device recognizer fallback; the audio and
-  recognition stay on your Mac.
-
-Everything the setup installs is **optional, downloaded only with your explicit "y", and lives in
+Everything the optional setup installs is **downloaded only with your explicit "y", and lives in
 your home folder** — never inside the app, nothing system-wide, no admin/sudo: `~/.bun` (bun
 runtime), `~/.voz/` (helper scripts, your dictionary + history, the warm servers, `kokoro/`,
 `asr-venv/`, `llm-venv/`), `~/.cache/sherpa` (Parakeet engine + model, ~600 MB), and
 `~/.cache/huggingface` (the MLX cleanup model, ~0.9 GB). Every engine runs locally and binds
-`127.0.0.1` only. `sh apps/macos/scripts/bootstrap.sh` prints this same summary before it installs
-anything.
+`127.0.0.1` only. The app's **Set up better engines…** prints this same summary, and asks before
+each step, so nothing installs without your yes.
 
 ## Privacy
 

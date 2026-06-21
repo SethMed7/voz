@@ -2,8 +2,8 @@
 # voz's WARM ASR engine: keeps NVIDIA Parakeet loaded in a tiny local server so each dictation
 # transcribes in ~0.08s instead of the ~1.5s a cold CLI spawn costs — SAME model, same quality,
 # nothing re-downloaded. 100% on-device, binds 127.0.0.1 only. Creates a venv with sherpa-onnx and
-# installs core/asr-server.py to ~/.voz. Works from a checkout OR standalone:
-#   curl -fsSL https://raw.githubusercontent.com/SethMed7/voz/main/apps/macos/scripts/setup-asr.sh | sh
+# installs core/asr-server.py to ~/.voz.
+# Run in-place by the app's "Set up better engines…"; not meant to be run standalone.
 set -e
 DIR="$HOME/.voz"; VENV="$DIR/asr-venv"
 mkdir -p "$DIR"

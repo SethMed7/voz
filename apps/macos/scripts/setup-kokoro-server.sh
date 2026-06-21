@@ -3,8 +3,7 @@
 # reads with a consistent ~0.3-0.6s first audio instead of the ~1-2s per-spawn model reload the
 # one-shot say.ts pays — SAME model + voices, nothing re-downloaded. 100% on-device, binds 127.0.0.1
 # only. Installs core/say-server.ts beside the kokoro-js helper that setup-kokoro.sh already set up.
-# Works from a checkout OR standalone:
-#   curl -fsSL https://raw.githubusercontent.com/SethMed7/voz/main/apps/macos/scripts/setup-kokoro-server.sh | sh
+# Run in-place by the app's "Set up better engines…"; not meant to be run standalone.
 set -e
 
 # Resolve the helper dir kokoro-js is installed in (matches KokoroEngine/WarmTTS): ~/.voz/kokoro else ~/.leelo.

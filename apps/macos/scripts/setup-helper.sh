@@ -1,8 +1,8 @@
 #!/bin/sh
 # Installs voz's canonical cleanup helper (pure Bun TypeScript, fully on-device)
 # to ~/.voz. Without it, voz uses the built-in Swift cleaner. Requires bun
-# (https://bun.sh). Works from a repo checkout OR standalone:
-#   curl -fsSL https://raw.githubusercontent.com/SethMed7/voz/main/apps/macos/scripts/setup-helper.sh | sh
+# (https://bun.sh).
+# Run in-place by the app's "Set up better engines…"; not meant to be run standalone.
 set -e
 DIR="$HOME/.voz"
 LEGACY="$HOME/.dictado"

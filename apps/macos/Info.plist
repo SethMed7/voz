@@ -2,47 +2,47 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key>
-    <string>voz</string>
-    <key>CFBundleDisplayName</key>
-    <string>voz</string>
-    <key>CFBundleExecutable</key>
-    <string>voz</string>
-    <key>CFBundleIdentifier</key>
-    <string>io.github.sethmed7.voz</string>
-    <key>CFBundleVersion</key>
-    <string>0.1.0</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleIconFile</key>
-    <string>voz</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>voz records only while you hold the dictation hotkey, transcribes it on-device, and never saves the audio.</string>
-    <key>NSSpeechRecognitionUsageDescription</key>
-    <string>voz can fall back to Apple's on-device speech recognizer; recognition stays on your Mac.</string>
-    <key>NSServices</key>
-    <array>
-        <dict>
-            <key>NSMenuItem</key>
-            <dict>
-                <key>default</key>
-                <string>Read Aloud with voz</string>
-            </dict>
-            <key>NSMessage</key>
-            <string>readAloud</string>
-            <key>NSPortName</key>
-            <string>voz</string>
-            <key>NSSendTypes</key>
-            <array>
-                <string>NSStringPboardType</string>
-            </array>
-        </dict>
-    </array>
+	<key>CFBundleDisplayName</key>
+	<string>voz</string>
+	<key>CFBundleExecutable</key>
+	<string>voz</string>
+	<key>CFBundleIconFile</key>
+	<string>voz</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.github.sethmed7.voz</string>
+	<key>CFBundleName</key>
+	<string>voz</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.1</string>
+	<key>CFBundleVersion</key>
+	<string>0.1.1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>voz records only while you hold the dictation hotkey, transcribes it on-device, and never saves the audio.</string>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Read Aloud with voz</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>readAloud</string>
+			<key>NSPortName</key>
+			<string>voz</string>
+			<key>NSSendTypes</key>
+			<array>
+				<string>NSStringPboardType</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>voz can fall back to Apple's on-device speech recognizer; recognition stays on your Mac.</string>
 </dict>
 </plist>

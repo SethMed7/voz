@@ -1,8 +1,7 @@
 #!/bin/sh
 # Installs voz's premium read-aloud voice (Kokoro, fully on-device) to ~/.voz/kokoro.
 # Requires bun (https://bun.sh). Without it, voz uses the built-in macOS voice.
-# Works from a repo checkout OR standalone:
-#   curl -fsSL https://raw.githubusercontent.com/SethMed7/voz/main/apps/macos/scripts/setup-kokoro.sh | sh
+# Run in-place by the app's "Set up better engines…"; not meant to be run standalone.
 set -e
 DIR="$HOME/.voz/kokoro"
 LEGACY="$HOME/.leelo"
