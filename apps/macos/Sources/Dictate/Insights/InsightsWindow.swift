@@ -11,10 +11,12 @@ final class InsightsWindow {
     func open(section: InsightsSection = .home) {
         if window == nil {
             let host = NSHostingView(rootView: InsightsRootView(store: InsightStore.shared, nav: nav))
+            host.sizingOptions = [] // don't let the hosting view resize the window to its content
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 940, height: 660),
                              styleMask: [.titled, .closable, .miniaturizable, .resizable],
                              backing: .buffered, defer: false)
             w.title = "voz Insights"
+            w.titleVisibility = .hidden // the sidebar already brands it; don't draw the title twice in the bar
             w.titlebarAppearsTransparent = true
             w.appearance = NSAppearance(named: .darkAqua)
             w.isReleasedWhenClosed = false
