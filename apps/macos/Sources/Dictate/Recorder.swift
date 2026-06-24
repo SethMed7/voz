@@ -124,7 +124,9 @@ final class Recorder {
         // the bars clearly track your voice and rest flat in silence.
         if let onLevel, n > 0 {
             let rms = (sumSq / Float(n)).squareRoot()
-            let level = min(1, max(0, rms - 0.003).squareRoot() * 3.9)
+            // Low noise floor + strong gain on the perceptual sqrt curve, so even quiet/normal speech
+            // drives the bars well up (loud speech saturates — that's the intended big reaction).
+            let level = min(1, max(0, rms - 0.0025).squareRoot() * 4.8)
             DispatchQueue.main.async { onLevel(level) }
         }
     }

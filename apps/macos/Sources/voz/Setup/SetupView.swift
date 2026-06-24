@@ -1,4 +1,5 @@
 import SwiftUI
+import Shared
 
 /// voz dark + single-electric-blue palette (mirrors the Insights window's VozTheme, which is internal
 /// to the Dictate module — kept in sync by hand; one accent only).
@@ -21,6 +22,7 @@ struct SetupView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             macCard
+            installTargetRow
             ScrollView {
                 VStack(spacing: 12) {
                     ForEach(Engine.allCases) { EngineCard(engine: $0, setup: setup) }
@@ -73,15 +75,42 @@ struct SetupView: View {
         }
     }
 
+    /// Where new downloads land. Anything already on your Mac is reused automatically; this only chooses
+    /// where fresh weights are written — the shared memex store (reusable by Breve/Rotli) or voz-only.
+    private var installTargetRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "shippingbox").font(.system(size: 12, weight: .medium)).foregroundColor(T.mist)
+            Text("New downloads").font(.system(size: 12, weight: .medium)).foregroundColor(T.mist)
+            Picker("", selection: $setup.target) {
+                Text("Shared store").tag(AIStore.Target.shared)
+                Text("voz only").tag(AIStore.Target.app)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 220)
+            Spacer(minLength: 0)
+            Text(setup.target == .shared ? "~/.memex/ai — reusable by your memex apps" : "~/.voz — removed with voz")
+                .font(.system(size: 11)).foregroundColor(T.mist).lineLimit(1)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+    }
+
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
             Divider().overlay(T.line)
             DisclosureGroup(isExpanded: $showDetails) {
                 Text("""
+                Models live OUTSIDE the app, so deleting voz never deletes them — that's why a fresh \
+                download can already show “Installed” (it's reusing what's on your Mac, not re-downloading).
+                • Shared store (\u{007E}/.memex/ai) — the big model weights, reusable by your other memex \
+                apps (Breve, Rotli).
+                • voz only (\u{007E}/.voz) — the small warm-server runtimes; and the models too, if you pick \
+                “voz only” above.
                 Permissions are requested only the first time you use a feature: Microphone (dictation), \
                 Accessibility (typing the result), Speech Recognition (Apple fallback). Everything installs \
-                in your home folder — \u{007E}/.voz and \u{007E}/.cache — never system-wide, no admin. \
-                Every engine runs locally and binds 127.0.0.1 only.
+                in your home folder — never system-wide, no admin. Every engine runs locally and binds \
+                127.0.0.1 only.
                 """)
                 .font(.system(size: 12))
                 .foregroundColor(T.mist)
@@ -131,6 +160,13 @@ private struct EngineCard: View {
                 Text(engine.subtitle).font(.system(size: 12)).foregroundColor(T.mist)
                 if let reason = support.reason {
                     Text(reason).font(.system(size: 11, weight: .medium)).foregroundColor(.orange).padding(.top, 1)
+                }
+                if case .installed = state, let src = setup.source(of: engine) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "shippingbox.fill").font(.system(size: 10)).foregroundColor(T.mist)
+                        Text(src).font(.system(size: 11)).foregroundColor(T.mist)
+                    }
+                    .padding(.top, 2)
                 }
                 progressRow
             }

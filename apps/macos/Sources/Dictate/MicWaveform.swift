@@ -29,7 +29,7 @@ final class MicWaveformView: NSView {
 
     /// Feed a normalized mic level (0…1). Must be called on the main thread.
     func setLevel(_ l: CGFloat) {
-        target = min(1, max(0, l * 1.6)) // a touch more sensitive — quieter speech moves the bars more
+        target = min(1, max(0, l * 2.0)) // sensitive — quiet speech still moves the bars a lot
         if timer == nil && !flat { start() } // re-arm if the view is reused after a stop
     }
 
@@ -62,7 +62,7 @@ final class MicWaveformView: NSView {
                 // Shape the live level with a traveling sine so the row ripples instead of moving as
                 // one block; a wide peak-to-valley range makes it read as a lively sound wave.
                 let ripple = 0.5 + 0.5 * sin(phase + CGFloat(i) * 1.15)
-                goal = max(0.05, target * (0.22 + 0.78 * ripple))
+                goal = max(0.05, target * (0.40 + 0.60 * ripple)) // taller valleys → a livelier, bigger wave
             }
             // Snappy attack, slower release — a punchy VU-meter feel.
             let k: CGFloat = goal > levels[i] ? 0.6 : 0.16

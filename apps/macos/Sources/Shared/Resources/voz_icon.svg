@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="460" height="450" viewBox="150 390 460 450" role="img" aria-labelledby="title desc">
+  <title id="title">VOZ icon, transparent background</title>
+  <desc id="desc">Standalone blue angular VOZ emblem traced as editable SVG paths on a transparent background.</desc>
+  <defs>
+    <!-- Background: near-black with a faint blue center bloom and vignette. -->
+    <radialGradient id="backgroundGradient" cx="50%" cy="50%" r="65%">
+      <stop offset="0%" stop-color="#06101d"/>
+      <stop offset="42%" stop-color="#020714"/>
+      <stop offset="100%" stop-color="#000106"/>
+    </radialGradient>
+    <radialGradient id="stageGlow" cx="50%" cy="54%" r="38%">
+      <stop offset="0%" stop-color="#0b58ff" stop-opacity="0.18"/>
+      <stop offset="48%" stop-color="#072a91" stop-opacity="0.07"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Blue mark gradients. -->
+    <linearGradient id="blueBody" x1="210" y1="470" x2="424" y2="790" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#13a7ff"/>
+      <stop offset="45%" stop-color="#007cff"/>
+      <stop offset="100%" stop-color="#003eff"/>
+    </linearGradient>
+    <linearGradient id="blueBars" x1="425" y1="635" x2="560" y2="438" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0063ff"/>
+      <stop offset="54%" stop-color="#009dff"/>
+      <stop offset="100%" stop-color="#1fd3ff"/>
+    </linearGradient>
+    <linearGradient id="blueInnerShadow" x1="368" y1="606" x2="423" y2="704" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00114f" stop-opacity="0.92"/>
+      <stop offset="62%" stop-color="#0029b7" stop-opacity="0.62"/>
+      <stop offset="100%" stop-color="#0093ff" stop-opacity="0.18"/>
+    </linearGradient>
+    <linearGradient id="cyanEdge" x1="480" y1="590" x2="560" y2="438" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#005aff"/>
+      <stop offset="60%" stop-color="#00aaff"/>
+      <stop offset="100%" stop-color="#27dcff"/>
+    </linearGradient>
+
+    <!-- Metallic wordmark gradient. -->
+    <linearGradient id="metal" x1="565" y1="600" x2="1060" y2="724" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#f7f7fa"/>
+      <stop offset="20%" stop-color="#ffffff"/>
+      <stop offset="38%" stop-color="#d7d8dd"/>
+      <stop offset="54%" stop-color="#ffffff"/>
+      <stop offset="76%" stop-color="#e5e6ea"/>
+      <stop offset="100%" stop-color="#ffffff"/>
+    </linearGradient>
+    <linearGradient id="metalHighlight" x1="620" y1="596" x2="1025" y2="731" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="47%" stop-color="#ffffff" stop-opacity="0.50"/>
+      <stop offset="55%" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Soft glows/shadows. -->
+    <filter id="blueGlow" x="150" y="390" width="460" height="450" filterUnits="userSpaceOnUse">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14" result="blur"/>
+      <feFlood flood-color="#006bff" flood-opacity="0.42" result="glow"/>
+      <feComposite in="glow" in2="blur" operator="in" result="coloredGlow"/>
+      <feMerge>
+        <feMergeNode in="coloredGlow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="cyanGlow" x="380" y="395" width="220" height="310" filterUnits="userSpaceOnUse">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="8" result="blur"/>
+      <feFlood flood-color="#00c8ff" flood-opacity="0.34" result="glow"/>
+      <feComposite in="glow" in2="blur" operator="in" result="coloredGlow"/>
+      <feMerge>
+        <feMergeNode in="coloredGlow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="textShadow" x="530" y="570" width="560" height="190" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000000" flood-opacity="0.62"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="2" flood-color="#ffffff" flood-opacity="0.15"/>
+    </filter>
+  
+  </defs>
+  <g id="voz-emblem" filter="url(#blueGlow)">
+    <!-- Main angular V mass: broad left descending stroke plus the lower joined fins. -->
+    <path id="emblem-main-v" fill="url(#blueBody)" d="
+      M193 485
+      L334 723
+      L366 774
+      L372 786
+      L375 788
+      L469 631
+      L468 495
+      C466 492 463 490 458 490
+      C454 490 451 493 451 496
+      L451 633
+      C451 637 449 640 446 640
+      C443 640 439 637 439 634
+      L439 516
+      C438 513 435 512 431 512
+      L422 528
+      L421 650
+      C420 653 417 654 414 653
+      C411 652 410 650 410 648
+      L410 558
+      L408 556
+      L376 618
+      L373 619
+      L302 498
+      C298 492 293 488 286 485
+      Z"/>
+
+    <!-- Dark triangular fold visible inside the left mark. -->
+    <path id="emblem-inner-fold" fill="url(#blueInnerShadow)" opacity="0.9" d="
+      M372 619
+      L408 556
+      L410 648
+      C410 652 413 655 417 653
+      L424 704
+      L375 788
+      L333 721
+      Z"/>
+  </g>
+
+  <g id="emblem-separated-ribs" filter="url(#cyanGlow)" fill="url(#cyanEdge)">
+    <path id="rib-mid" d="
+      M491 468
+      C487 468 483 471 480 477
+      L480 589
+      C480 595 482 600 483 604
+      L499 583
+      L499 475
+      C497 471 494 468 491 468
+      Z"/>
+    <path id="rib-upper" d="
+      M521 452
+      C517 452 513 455 510 460
+      L511 560
+      L529 534
+      L529 460
+      C528 455 525 452 521 452
+      Z"/>
+    <path id="rib-top" d="
+      M552 438
+      C546 438 541 441 540 444
+      L542 511
+      L559 486
+      L559 446
+      C558 442 556 439 552 438
+      Z"/>
+  </g>
+
+</svg>

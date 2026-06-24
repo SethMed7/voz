@@ -77,7 +77,10 @@ final class WarmLLM {
         guard Self.isInstalled() else { return nil }
         ensureRunning()
         guard waitHealthy(timeout: 15) else { return nil } // first call waits out the one-time model load
-        let body: [String: Any] = ["system": system, "text": text, "max_tokens": 1024]
+        // Polish output is ~the input length, so cap generation near it (≈chars/3 tokens + headroom)
+        // instead of a flat 1024 — the model can't ramble, which is the dominant cost on long dictations.
+        let maxTokens = max(96, min(1024, text.count / 3 + 64))
+        let body: [String: Any] = ["system": system, "text": text, "max_tokens": maxTokens]
         guard let data = try? JSONSerialization.data(withJSONObject: body) else { return nil }
         // Pass the body via a temp file (-d @file) — avoids arg-length/escaping limits.
         let tmp = FileManager.default.temporaryDirectory

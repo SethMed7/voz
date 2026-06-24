@@ -166,12 +166,14 @@ under **menu → Dictate → "Polish with AI"**; pin a different model with `VOZ
 ## What installs, and where
 
 Everything the optional setup installs is **downloaded only with your explicit "y", and lives in
-your home folder** — never inside the app, nothing system-wide, no admin/sudo: `~/.bun` (bun
-runtime), `~/.voz/` (helper scripts, your dictionary + history, the warm servers, `kokoro/`,
-`asr-venv/`, `llm-venv/`), `~/.cache/sherpa` (Parakeet engine + model, ~600 MB), and
-`~/.cache/huggingface` (the MLX cleanup model, ~0.9 GB). Every engine runs locally and binds
-`127.0.0.1` only. The app's **Set up better engines…** prints this same summary, and asks before
-each step, so nothing installs without your yes.
+your home folder** — never inside the app, nothing system-wide, no admin/sudo. **Model weights** go to
+a **shared store at `~/.memex/ai/models`** (Parakeet ~600 MB, the MLX cleanup model ~0.9 GB) — reusable
+by your other on-device "memex" apps, and **reused on reinstall instead of re-downloaded** — or to
+`~/.voz`/`~/.cache` if you pick **"voz only"** in Setup. The small **runtimes** stay voz-local: `~/.bun`
+(bun runtime) and `~/.voz/` (helper scripts, your dictionary + history, the warm servers, `kokoro/`,
+`asr-venv/`, `llm-venv/`). Every engine runs locally and binds `127.0.0.1` only. The app's **Set up
+better engines…** shows the **source and path of each engine** and asks before each step, so nothing
+installs without your yes.
 
 ## Privacy
 

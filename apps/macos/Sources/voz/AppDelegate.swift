@@ -1,6 +1,7 @@
 import AppKit
 import Speak
 import Dictate
+import Shared
 
 /// voz — the voice layer for your Mac. One menu-bar app, two capabilities:
 ///   • Dictate — hold Fn, speak, release; the cleaned text is typed where your cursor is.
@@ -41,6 +42,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if WelcomeWindow.shouldShow {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { WelcomeWindow.shared.open() }
         }
+
+        // QA hook (off by default): VOZ_FORCE_TUTORIAL=1 opens Insights and replays the coachmark tour,
+        // so the first-run walkthrough can be previewed without going through engine setup each time.
+        if ProcessInfo.processInfo.environment["VOZ_FORCE_TUTORIAL"] == "1" {
+            UserDefaults.standard.set(false, forKey: "didShowTutorial")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { InsightsWindow.shared.openTutorial() }
+        }
+        // QA hook (off by default): VOZ_FORCE_SETUP=1 opens the "Set up better engines" window on launch.
+        if ProcessInfo.processInfo.environment["VOZ_FORCE_SETUP"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { SetupWindow.shared.open() }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -54,7 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Resting (both idle) → the voz brand V. Active → the live SF Symbol, so a hot mic or an
         // in-progress read still reads at a glance.
         if winner.priority == 0 {
-            statusItem.button?.image = VozIcon.menuBar()
+            statusItem.button?.image = VozMark.menuBarTemplate()
         } else {
             statusItem.button?.image = NSImage(systemSymbolName: winner.symbol, accessibilityDescription: "voz")
         }

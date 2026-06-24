@@ -1,4 +1,5 @@
 import Foundation
+import Shared
 
 /// The optional on-device engines the native Setup window can install. Each one downloads its big
 /// model files in-process (URLSession → real % progress) and runs only its environment step (venv /
@@ -82,6 +83,12 @@ final class EngineSetup: ObservableObject {
 
     @Published private(set) var state: [Engine: InstallState] = [:]
 
+    /// Where NEW downloads land. Detection always *reuses* whatever is already on the Mac (any store);
+    /// this only chooses where fresh weights are written — the shared memex store (reusable by Breve,
+    /// Rotli, …) or voz-only. Big model weights default to shared; the small venvs/servers are always
+    /// voz-local regardless.
+    @Published var target: AIStore.Target = .shared
+
     /// A one-time scan of this Mac's capabilities — shown in the Setup window and used to gate engines.
     let mac = MacInfo.scan()
     var appleSilicon: Bool { mac.appleSilicon }
@@ -123,14 +130,23 @@ final class EngineSetup: ObservableObject {
 
     func isInstalled(_ e: Engine) -> Bool {
         switch e {
-        case .dictation:
-            return glob("\(home)/.cache/sherpa/*parakeet*/encoder.int8.onnx")
+        case .dictation: // model in any store (shared/legacy) + the voz-local warm server
+            return AIStore.parakeetOrigin() != nil
                 && exists("\(home)/.voz/asr-venv/bin/python3") && exists("\(home)/.voz/asr-server.py")
         case .voices:
             return exists("\(home)/.voz/kokoro/node_modules/kokoro-js")
         case .cleanup:
             return exists("\(home)/.voz/llm-venv/bin/python3") && exists("\(home)/.voz/llm-server.py")
                 && exists("\(home)/.voz/llm-model")
+        }
+    }
+
+    /// An honest "where it lives" label for an installed engine, for the Setup card (nil if N/A).
+    func source(of e: Engine) -> String? {
+        switch e {
+        case .dictation: return AIStore.parakeetOrigin()?.label
+        case .cleanup: return AIStore.cleanupOrigin()?.label
+        case .voices: return exists("\(home)/.voz/kokoro/node_modules/kokoro-js") ? "voz only" : nil
         }
     }
 
@@ -162,22 +178,22 @@ final class EngineSetup: ObservableObject {
     // MARK: per-engine procedures
 
     private func installDictation() throws {
-        let cache = "\(home)/.cache/sherpa"
-        try? FileManager.default.createDirectory(atPath: cache, withIntermediateDirectories: true)
+        let dest = AIStore.modelsDir(for: target) // shared store or voz-only cache
+        try? FileManager.default.createDirectory(atPath: dest, withIntermediateDirectories: true)
         let rel = "https://github.com/k2-fsa/sherpa-onnx/releases/download"
-        // 1. Engine binary (~25 MB) — quick.
-        if !glob("\(cache)/*/bin/sherpa-onnx-offline") {
+        // 1. Engine binary (~25 MB) — skip if a copy is already on the Mac (any store).
+        if !AIStore.sherpaBinaryPresent() {
             try downloadAndUntar(
                 URL(string: "\(rel)/v1.13.2/sherpa-onnx-v1.13.2-osx-arm64-shared.tar.bz2")!,
-                into: cache, engine: .dictation, status: "Downloading engine")
+                into: dest, engine: .dictation, status: "Downloading engine")
         }
-        // 2. Parakeet model (~482 MB) — the big one.
-        if !glob("\(cache)/*parakeet*/encoder.int8.onnx") {
+        // 2. Parakeet model (~482 MB) — reuse any copy already present rather than re-download.
+        if AIStore.parakeetOrigin() == nil {
             try downloadAndUntar(
                 URL(string: "\(rel)/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2")!,
-                into: cache, engine: .dictation, status: "Downloading model")
+                into: dest, engine: .dictation, status: "Downloading model")
         }
-        // 3. Warm server env (venv + sherpa-onnx) — non-interactive already.
+        // 3. Warm server env (venv + sherpa-onnx) — always voz-local (small, tied to the server script).
         progress(.dictation, nil, "Setting up warm server…")
         try runScript("setup-asr.sh", status: "Setting up warm server…")
     }
@@ -210,11 +226,18 @@ final class EngineSetup: ObservableObject {
         progress(.cleanup, nil, "Setting up runtime…")
         try runScript("setup-cleaner.sh", status: "Setting up runtime…",
                       env: ["VOZ_ASSUME_YES": "1", "VOZ_SETUP_ENV_ONLY": "1"])
-        // 2. Download the pinned MLX model into a local dir (real % on the big safetensors).
-        let dir = "\(home)/.voz/llm/mlx-model"
+        // 2. Reuse an existing model if the marker already points at one that's present.
+        if let existing = try? String(contentsOfFile: "\(home)/.voz/llm-model", encoding: .utf8) {
+            let p = existing.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !p.isEmpty, FileManager.default.fileExists(atPath: "\(p)/config.json") { return }
+        }
+        // 3. Download the pinned MLX model into the chosen store (real % on the big safetensors).
+        let dir = target == .shared
+            ? "\(AIStore.sharedModels)/qwen2.5-1.5b-instruct-4bit"
+            : "\(home)/.voz/llm/mlx-model"
         try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         try downloadMLXModel(repo: "mlx-community/Qwen2.5-1.5B-Instruct-4bit", into: dir, engine: .cleanup)
-        // 3. Mark ready — the marker holds the local path the warm server loads from (fully offline).
+        // 4. Mark ready — the marker holds the local path the warm server loads from (fully offline).
         try dir.write(toFile: "\(home)/.voz/llm-model", atomically: true, encoding: .utf8)
     }
 

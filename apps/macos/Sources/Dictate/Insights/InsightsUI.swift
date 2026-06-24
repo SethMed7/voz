@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Shared
 
 /// The Insights dashboard shell: a Flow-style dark sidebar (Home / Insights / Dictionary / History)
 /// over a detail pane. Phase 1 wires Home to real stats; the others are honest placeholders.
@@ -23,47 +24,72 @@ final class InsightsNav: ObservableObject {
     @Published var showTutorial = false
 }
 
-struct InsightsRootView: View {
-    @ObservedObject var store: InsightStore
-    @ObservedObject var nav: InsightsNav
-
-    var body: some View {
-        NavigationSplitView {
-            List(selection: $nav.section) {
-                HStack(spacing: 8) {
-                    Image(systemName: "waveform").foregroundStyle(VozTheme.electric)
-                    Text("voz").font(.headline).foregroundStyle(VozTheme.textHi)
-                    Text("Insights").font(.headline).foregroundStyle(VozTheme.mist)
-                }
-                .padding(.vertical, 8)
-
-                ForEach(InsightsSection.allCases) { s in
-                    Label(s.rawValue, systemImage: s.icon).tag(s)
-                }
-            }
-            .navigationSplitViewColumnWidth(min: 200, ideal: 210, max: 260)
-        } detail: {
-            Group {
-                switch nav.section {
-                case .home: HomeView(store: store)
-                case .insights: InsightsView(store: store)
-                case .dictionary: DictionaryView()
-                case .history: HistoryView(store: store)
-                case .data: DataPrivacyView(store: store)
-                }
-            }
-            .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
-            .background(VozTheme.black)
-        }
-        .preferredColorScheme(.dark)
-        .overlay { if nav.showTutorial { TutorialOverlay(nav: nav) } }
+/// Captures each sidebar row's on-screen frame (in the shared coordinate space) so the tutorial can
+/// point a callout at the real row instead of floating a card in the middle of the window.
+struct RowFrameKey: PreferenceKey {
+    static var defaultValue: [InsightsSection: CGRect] = [:]
+    static func reduce(value: inout [InsightsSection: CGRect], nextValue: () -> [InsightsSection: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
     }
 }
 
-/// A short, skippable walkthrough of the dashboard — shown once, right after engine setup finishes.
-/// Each step switches the detail pane to the section it describes, so you see it behind the card.
+struct InsightsRootView: View {
+    @ObservedObject var store: InsightStore
+    @ObservedObject var nav: InsightsNav
+    @State private var rowFrames: [InsightsSection: CGRect] = [:]
+
+    static let space = "insights.coach"
+
+    var body: some View {
+        ZStack {
+            NavigationSplitView {
+                List(selection: $nav.section) {
+                    HStack(spacing: 8) {
+                        Image(nsImage: VozMark.coloredMark(height: 22))
+                        Text("voz").font(.headline).foregroundStyle(VozTheme.textHi)
+                        Text("Insights").font(.headline).foregroundStyle(VozTheme.mist)
+                    }
+                    .padding(.vertical, 8)
+
+                    ForEach(InsightsSection.allCases) { s in
+                        Label(s.rawValue, systemImage: s.icon).tag(s)
+                            .background(GeometryReader { geo in
+                                Color.clear.preference(key: RowFrameKey.self,
+                                                       value: [s: geo.frame(in: .named(Self.space))])
+                            })
+                    }
+                }
+                .navigationSplitViewColumnWidth(min: 200, ideal: 210, max: 260)
+            } detail: {
+                Group {
+                    switch nav.section {
+                    case .home: HomeView(store: store)
+                    case .insights: InsightsView(store: store)
+                    case .dictionary: DictionaryView()
+                    case .history: HistoryView(store: store)
+                    case .data: DataPrivacyView(store: store)
+                    }
+                }
+                .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
+                .background(VozTheme.black)
+            }
+            .preferredColorScheme(.dark)
+
+            if nav.showTutorial {
+                TutorialOverlay(nav: nav, frames: rowFrames).transition(.opacity)
+            }
+        }
+        .coordinateSpace(name: Self.space)
+        .onPreferenceChange(RowFrameKey.self) { rowFrames = $0 }
+    }
+}
+
+/// A short, skippable coachmark tour: each step spotlights the matching sidebar row and points a callout
+/// at it (arrow on the left), advancing row-to-row on Next — so the tour teaches the actual UI instead of
+/// floating a card in the middle of a dimmed window. Shown once, right after engine setup finishes.
 struct TutorialOverlay: View {
     @ObservedObject var nav: InsightsNav
+    let frames: [InsightsSection: CGRect]
     @State private var step = 0
 
     private struct Step { let title: String; let body: String; let section: InsightsSection; let icon: String }
@@ -75,37 +101,99 @@ struct TutorialOverlay: View {
         .init(title: "Data & Privacy", body: "You're in control — keep history or not, save recordings or not, skip password fields. Nothing ever leaves your Mac.", section: .data, icon: "lock.shield"),
     ]
 
+    private let cardWidth: CGFloat = 300
+    private let arrowW: CGFloat = 11
+    private let gap: CGFloat = 8
+
     var body: some View {
-        ZStack {
-            Color.black.opacity(0.6).ignoresSafeArea()
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 10) {
-                    Image(systemName: steps[step].icon).font(.system(size: 18, weight: .medium)).foregroundStyle(VozTheme.electric)
-                    Text(steps[step].title).font(.system(size: 18, weight: .semibold)).foregroundStyle(VozTheme.textHi)
-                    Spacer()
-                    Button("Skip") { finish() }.buttonStyle(.plain).font(.system(size: 13)).foregroundStyle(VozTheme.mist)
-                }
-                Text(steps[step].body).font(.system(size: 13)).foregroundStyle(VozTheme.mist)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 6) {
-                    ForEach(0..<steps.count, id: \.self) { i in
-                        Circle().fill(i == step ? VozTheme.electric : VozTheme.line).frame(width: 6, height: 6)
-                    }
-                    Spacer()
-                    if step > 0 {
-                        Button("Back") { withAnimation { step -= 1; nav.section = steps[step].section } }
-                            .buttonStyle(.plain).font(.system(size: 13)).foregroundStyle(VozTheme.mist)
-                    }
-                    Button(step == steps.count - 1 ? "Done" : "Next") { advance() }.buttonStyle(TutorialButton())
-                }
-                .padding(.top, 4)
+        GeometryReader { geo in
+            ZStack(alignment: .topLeading) {
+                spotlight(in: geo.size, hole: frames[steps[step].section])
+                callout(in: geo.size, row: frames[steps[step].section])
             }
-            .padding(22).frame(width: 410)
-            .background(RoundedRectangle(cornerRadius: 16).fill(VozTheme.ink))
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(VozTheme.line, lineWidth: 1))
-            .shadow(color: .black.opacity(0.5), radius: 28, y: 12)
+            .frame(width: geo.size.width, height: geo.size.height)
+            .animation(.easeInOut(duration: 0.22), value: step)
         }
+        .ignoresSafeArea()
         .onAppear { nav.section = steps[0].section }
+    }
+
+    /// Dim everything except a rounded cutout around the active row, ringed in electric blue.
+    private func spotlight(in size: CGSize, hole: CGRect?) -> some View {
+        Rectangle()
+            .fill(Color.black.opacity(0.55))
+            .mask(
+                ZStack {
+                    Rectangle().fill(Color.white)
+                    if let h = hole {
+                        RoundedRectangle(cornerRadius: 7).fill(Color.black)
+                            .frame(width: h.width, height: h.height)
+                            .position(x: h.midX, y: h.midY)
+                            .blendMode(.destinationOut)
+                    }
+                }.compositingGroup()
+            )
+            .overlay(
+                Group {
+                    if let h = hole {
+                        RoundedRectangle(cornerRadius: 7)
+                            .stroke(VozTheme.electric.opacity(0.85), lineWidth: 1.5)
+                            .frame(width: h.width, height: h.height)
+                            .position(x: h.midX, y: h.midY)
+                    }
+                }
+            )
+            .contentShape(Rectangle()) // swallow clicks on the dimmed area
+    }
+
+    /// The callout card + left arrow, anchored just right of the active row (centered if no frame yet).
+    private func callout(in size: CGSize, row: CGRect?) -> some View {
+        let hasRow = (row?.width ?? 0) > 0
+        let r = row ?? .zero
+        let centerY = min(max(r.midY, 96), size.height - 96)
+        let cx = r.maxX + gap + arrowW / 2 + cardWidth / 2
+        return Group {
+            if hasRow {
+                HStack(spacing: 0) {
+                    LeftArrow().fill(VozTheme.ink).frame(width: arrowW, height: 18)
+                    cardBody
+                }
+                .position(x: cx, y: centerY)
+            } else {
+                cardBody.position(x: size.width / 2, y: size.height / 2)
+            }
+        }
+    }
+
+    private var cardBody: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: steps[step].icon).font(.system(size: 16, weight: .medium)).foregroundStyle(VozTheme.electric)
+                Text(steps[step].title).font(.system(size: 16, weight: .semibold)).foregroundStyle(VozTheme.textHi)
+                Spacer()
+                Button("Skip") { finish() }.buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(VozTheme.mist)
+            }
+            Text(steps[step].body).font(.system(size: 12.5)).foregroundStyle(VozTheme.mist)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                ForEach(0..<steps.count, id: \.self) { i in
+                    Circle().fill(i == step ? VozTheme.electric : VozTheme.line).frame(width: 6, height: 6)
+                }
+                Spacer()
+                if step > 0 {
+                    Button("Back") { withAnimation { step -= 1; nav.section = steps[step].section } }
+                        .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(VozTheme.mist)
+                }
+                Button(step == steps.count - 1 ? "Done" : "Next") { advance() }
+                    .buttonStyle(TutorialButton()).keyboardShortcut(.defaultAction)
+            }
+            .padding(.top, 2)
+        }
+        .padding(18)
+        .frame(width: cardWidth, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 14).fill(VozTheme.ink))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(VozTheme.line, lineWidth: 1))
+        .shadow(color: .black.opacity(0.5), radius: 24, y: 10)
     }
 
     private func advance() {
@@ -114,6 +202,18 @@ struct TutorialOverlay: View {
     private func finish() {
         UserDefaults.standard.set(true, forKey: "didShowTutorial")
         withAnimation { nav.showTutorial = false }
+    }
+}
+
+/// A small left-pointing triangle for the coachmark callout (its tip sits beside the highlighted row).
+private struct LeftArrow: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.midY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.closeSubpath()
+        return p
     }
 }
 

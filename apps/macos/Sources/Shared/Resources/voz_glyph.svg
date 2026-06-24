@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="382" height="362" viewBox="185 432 382 362" role="img" aria-label="voz">
+  <!-- Monochrome menu-bar glyph: the official VOZ emblem (apps' brand/source/voz_icon_transparent.svg)
+       with the gradients, glows and inner-fold stripped to a single solid silhouette, so it renders as
+       a crisp macOS template image that tints black on a light bar / white on a dark one. -->
+  <g fill="#000000">
+    <!-- Main angular V mass. -->
+    <path d="
+      M193 485
+      L334 723
+      L366 774
+      L372 786
+      L375 788
+      L469 631
+      L468 495
+      C466 492 463 490 458 490
+      C454 490 451 493 451 496
+      L451 633
+      C451 637 449 640 446 640
+      C443 640 439 637 439 634
+      L439 516
+      C438 513 435 512 431 512
+      L422 528
+      L421 650
+      C420 653 417 654 414 653
+      C411 652 410 650 410 648
+      L410 558
+      L408 556
+      L376 618
+      L373 619
+      L302 498
+      C298 492 293 488 286 485
+      Z"/>
+    <!-- Three ascending separated ribs (the sound-wave arm). -->
+    <path d="M491 468 C487 468 483 471 480 477 L480 589 C480 595 482 600 483 604 L499 583 L499 475 C497 471 494 468 491 468 Z"/>
+    <path d="M521 452 C517 452 513 455 510 460 L511 560 L529 534 L529 460 C528 455 525 452 521 452 Z"/>
+    <path d="M552 438 C546 438 541 441 540 444 L542 511 L559 486 L559 446 C558 442 556 439 552 438 Z"/>
+  </g>
+</svg>

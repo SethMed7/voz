@@ -11,6 +11,12 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/voz "$APP/Contents/MacOS/voz"
 cp Info.plist "$APP/Contents/Info.plist"
 
+# SwiftPM resource bundles (e.g. voz_Shared.bundle — the brand SVGs loaded via Bundle.module).
+# Bundle.module resolves these from the app's Resources dir, so copy any that the build emitted.
+for b in .build/release/*.bundle; do
+  [ -e "$b" ] && cp -R "$b" "$APP/Contents/Resources/"
+done
+
 # Strip the debug symbol map — it embeds absolute build paths like
 # /Users/<you>/voz/.build/.../*.swift.o, which would otherwise leak your macOS
 # username into the public binary. Must run before codesign (it edits the binary).

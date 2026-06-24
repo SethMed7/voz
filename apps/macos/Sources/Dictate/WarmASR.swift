@@ -55,14 +55,16 @@ final class WarmASR {
     }
 
     /// Transcribe a 16k-mono WAV via the warm server. nil if unavailable/failed → caller falls back
-    /// to the cold chain. Call OFF the main thread.
-    func transcribe(wav16kPath: String) -> String? {
+    /// to the cold chain. Call OFF the main thread. `timeout` scales with clip length, so a long
+    /// dictation isn't cut off at a fixed cap and needlessly bumped to the slower cold engine.
+    func transcribe(wav16kPath: String, timeout: TimeInterval) -> String? {
         guard Self.isInstalled() else { return nil }
         ensureRunning()
         guard waitHealthy(timeout: 8) else { return nil } // first call waits out the one-time model load
         let body = "{\"path\":\"\(wav16kPath)\"}"
-        guard let r = Subprocess.run(curl(), ["-s", "--max-time", "15", "-X", "POST",
-              "\(baseURL)/transcribe", "-H", "Content-Type: application/json", "-d", body], timeout: 18),
+        let maxTime = max(15, Int(timeout))
+        guard let r = Subprocess.run(curl(), ["-s", "--max-time", "\(maxTime)", "-X", "POST",
+              "\(baseURL)/transcribe", "-H", "Content-Type: application/json", "-d", body], timeout: TimeInterval(maxTime) + 3),
               r.status == 0,
               let obj = try? JSONSerialization.jsonObject(with: r.stdout) as? [String: Any],
               let text = obj["text"] as? String else { return nil }

@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import Speech
+import Shared
 
 /// Transcribes a recorded WAV in ONE pass (file/batch mode) — the opposite of
 /// the old streaming recognizer. File mode has none of streaming's failure
@@ -67,7 +68,7 @@ final class WarmSherpaTranscriber: Transcriber {
             guard conv?.status == 0, FileManager.default.fileExists(atPath: wav16.path) else {
                 DispatchQueue.main.async { completion("") }; return
             }
-            let text = WarmASR.shared.transcribe(wav16kPath: wav16.path) ?? ""
+            let text = WarmASR.shared.transcribe(wav16kPath: wav16.path, timeout: timeout) ?? ""
             DispatchQueue.main.async { completion(text) }
         }
     }
@@ -99,7 +100,8 @@ final class SherpaTranscriber: Transcriber {
             "/usr/local/bin/sherpa-onnx-offline",
             "\(home)/.local/bin/sherpa-onnx-offline",
         ].compactMap { $0 }
-        candidates += matches("\(home)/.cache/sherpa/*/bin/sherpa-onnx-offline") // versioned dir
+        candidates += matches("\(AIStore.sharedModels)/*/bin/sherpa-onnx-offline") // shared memex store (preferred)
+        candidates += matches("\(home)/.cache/sherpa/*/bin/sherpa-onnx-offline")    // legacy voz-only cache
         return Subprocess.firstExecutable(candidates)
     }
 
@@ -112,7 +114,8 @@ final class SherpaTranscriber: Transcriber {
             "\(home)/.voz/sherpa/model",
             "\(home)/.dictado/sherpa/model",
         ].compactMap { $0 }
-        candidates += matches("\(home)/.cache/sherpa/*parakeet*")
+        candidates += matches("\(AIStore.sharedModels)/*parakeet*") // shared memex store (preferred)
+        candidates += matches("\(home)/.cache/sherpa/*parakeet*")   // legacy voz-only cache
         let fm = FileManager.default
         return candidates.first {
             fm.fileExists(atPath: "\($0)/tokens.txt") && fm.fileExists(atPath: "\($0)/encoder.int8.onnx")

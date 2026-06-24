@@ -21,6 +21,10 @@ public final class DictateController: NSObject {
     private let learner = KeystrokeLearner() // learns corrections from keystrokes — works in terminals too
     private var handsFree = false // true while a double-tap-⌃ (no-hold) session is recording
     private var recordingWatchdog: DispatchWorkItem? // force-finishes a stuck session if a key-up is dropped
+    /// Bumped whenever a session ends or is cancelled, so a late transcribe/polish completion from a
+    /// superseded run is ignored — both Esc-to-cancel and the processing watchdog rely on this.
+    private var workGen = 0
+    private var processingWatchdog: DispatchWorkItem? // force-resets if transcribe/polish wedges on a stuck engine
 
     // In-memory safety net: the last few cleaned dictations, so a paste that lands in the wrong app or
     // field isn't lost forever (you'd otherwise have to re-say it). Never written to disk — consistent
@@ -160,7 +164,9 @@ public final class DictateController: NSObject {
             HotKey.shared.register()
         } else {
             HotKey.shared.unregister()
+            workGen &+= 1 // invalidate any in-flight transcribe/polish
             recordingWatchdog?.cancel(); recordingWatchdog = nil
+            processingWatchdog?.cancel(); processingWatchdog = nil
             unregisterEsc() // and don't leave Esc consumed if we were recording
             if let clip = recorder.stop() { try? FileManager.default.removeItem(at: clip.url) }
             state = .idle
@@ -248,7 +254,8 @@ public final class DictateController: NSObject {
         dictationSecure = IsSecureEventInputEnabled()
             || ((app?.bundleIdentifier).map(Self.passwordManagerBundleIDs.contains) ?? false)
         learner.stop(); LearnPill.shared.close() // a new dictation supersedes any pending learn prompt
-        registerEsc() // Esc cancels while recording
+        workGen &+= 1 // a fresh session; any straggler completion from before is now stale
+        registerEsc() // Esc cancels — while recording, and through processing
         state = .listening
         Overlay.shared.showListening()
         // Warm the engines now so their load overlaps with you speaking, not the paste path:
@@ -275,23 +282,22 @@ public final class DictateController: NSObject {
 
     private func finishRecording() {
         recordingWatchdog?.cancel(); recordingWatchdog = nil
-        unregisterEsc()
-        state = .finishing
+        state = .finishing // Esc stays claimed → it now cancels the transcribe/polish (see escapePressed)
         guard let clip = recorder.stop() else { // nothing captured
-            state = .idle
+            unregisterEsc(); state = .idle
             Overlay.shared.close()
             return
         }
         // Too short, or silent: drop it silently rather than paste a phantom.
         if clip.duration < minClipSeconds {
             try? FileManager.default.removeItem(at: clip.url)
-            state = .idle
+            unregisterEsc(); state = .idle
             Overlay.shared.close()
             return
         }
         if clip.peak < silenceFloor {
             try? FileManager.default.removeItem(at: clip.url)
-            state = .idle
+            unregisterEsc(); state = .idle
             Overlay.shared.flash(message: "nothing heard")
             return
         }
@@ -301,6 +307,7 @@ public final class DictateController: NSObject {
     /// Esc while recording — discard the clip, paste nothing. Works for both hold and hands-free.
     fileprivate func cancelRecording() {
         guard state == .listening else { return }
+        workGen &+= 1
         recordingWatchdog?.cancel(); recordingWatchdog = nil
         unregisterEsc()
         handsFree = false
@@ -310,16 +317,65 @@ public final class DictateController: NSObject {
         Overlay.shared.flash(message: "cancelled")
     }
 
-    // MARK: Esc-to-cancel — via the shared EscapeKey owner, so it never collides with read-aloud's Esc.
+    /// Esc while processing — abandon a transcribe/polish that's taking too long (or has wedged). The
+    /// in-flight subprocess finishes harmlessly in the background; bumping workGen makes its result a
+    /// no-op (no paste), so the UI is free immediately and a new dictation can start.
+    fileprivate func cancelProcessing() {
+        guard state == .finishing else { return }
+        workGen &+= 1
+        processingWatchdog?.cancel(); processingWatchdog = nil
+        unregisterEsc()
+        state = .idle
+        Overlay.shared.flash(message: "cancelled")
+    }
 
-    private func registerEsc() { EscapeKey.shared.claim(self) { [weak self] in self?.cancelRecording() } }
+    // MARK: Esc-to-cancel — via the shared EscapeKey owner, so it never collides with read-aloud's Esc.
+    // Claimed from recording start and held through processing; the handler routes by state so the same
+    // key discards a recording mid-capture OR cancels a stuck transcribe/polish.
+
+    private func registerEsc() { EscapeKey.shared.claim(self) { [weak self] in self?.escapePressed() } }
     private func unregisterEsc() { EscapeKey.shared.release(self) }
+    private func escapePressed() {
+        switch state {
+        case .listening: cancelRecording()
+        case .finishing: cancelProcessing()
+        case .idle: break
+        }
+    }
+
+    /// Safety net for the processing phase: if transcribe/polish wedges on a stuck engine, force back to
+    /// idle (and free Esc) after a generous, clip-scaled bound, so the pill can never spin forever.
+    private func startProcessingWatchdog(gen: Int, clipDuration: TimeInterval) {
+        processingWatchdog?.cancel()
+        let bound = max(30, clipDuration * 3 + 25)
+        let wd = DispatchWorkItem { [weak self] in
+            guard let self, self.state == .finishing, self.workGen == gen else { return }
+            self.workGen &+= 1
+            self.processingWatchdog = nil
+            self.unregisterEsc()
+            self.state = .idle
+            Overlay.shared.flash(message: "took too long — press Fn to retry")
+        }
+        processingWatchdog = wd
+        DispatchQueue.main.asyncAfter(deadline: .now() + bound, execute: wd)
+    }
+
+    /// Tear down the processing phase for a normal non-paste exit (e.g. "nothing heard"), if still current.
+    private func endProcessing(gen: Int) {
+        guard workGen == gen else { return }
+        processingWatchdog?.cancel(); processingWatchdog = nil
+        unregisterEsc()
+        state = .idle
+    }
 
     /// One pass over the whole recorded clip, off the main thread, then clean +
     /// paste. The temp WAV is deleted as soon as we have the text — no audio is
-    /// ever persisted.
+    /// ever persisted. Esc (or the watchdog) can cancel mid-flight: each completion
+    /// re-checks `workGen`, so a superseded run never pastes.
     private func transcribeAndDeliver(_ clip: Recorder.Result) {
         Overlay.shared.showThinking()
+        let gen = workGen
+        startProcessingWatchdog(gen: gen, clipDuration: clip.duration)
         // Snapshot the metrics deliver() doesn't otherwise have — the clip's duration (→WPM), the
         // engine, and the app captured at recording start — so per-dictation stats can be recorded.
         let ctx = DictationContext(durationMs: Int(clip.duration * 1000),
@@ -330,10 +386,11 @@ public final class DictateController: NSObject {
         let wav = clip.url
         Transcribers.run(wav, clipDuration: clip.duration) { [weak self] text in
             guard let self else { try? FileManager.default.removeItem(at: wav); return }
+            guard self.workGen == gen else { try? FileManager.default.removeItem(at: wav); return } // cancelled
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else {
                 try? FileManager.default.removeItem(at: wav) // nothing heard — don't keep the audio
-                self.state = .idle
+                self.endProcessing(gen: gen)
                 Overlay.shared.flash(message: "nothing heard")
                 return
             }
@@ -342,6 +399,7 @@ public final class DictateController: NSObject {
                 let cleaner = Cleaners.best(for: spell.text) // skips the LLM when already clean; off main
                 let cleaned = Lexicon.shared.apply(cleaner.clean(spell.text)) // cleanup, then your dictionary
                 DispatchQueue.main.async {
+                    guard self.workGen == gen else { try? FileManager.default.removeItem(at: wav); return } // cancelled during polish
                     for rule in spell.learned { Lexicon.shared.learnExplicit(from: rule.from, to: rule.to) }
                     self.deliver(cleaned, ctx: ctx, audio: wav) // record copies the recording (when saving is on)
                     try? FileManager.default.removeItem(at: wav) // then drop the temp WAV
@@ -356,6 +414,8 @@ public final class DictateController: NSObject {
     }
 
     private func deliver(_ cleaned: String, ctx: DictationContext, audio: URL?) {
+        processingWatchdog?.cancel(); processingWatchdog = nil
+        unregisterEsc()
         state = .idle
         guard !cleaned.isEmpty else {
             Overlay.shared.flash(message: "nothing heard")
