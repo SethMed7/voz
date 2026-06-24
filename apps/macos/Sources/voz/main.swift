@@ -8,7 +8,7 @@ import Dictate
 let args = CommandLine.arguments
 
 if args.contains("--version") {
-    print("voz \((Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.1.6")"); exit(0)
+    print("voz \((Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.1.7")"); exit(0)
 }
 if SpeakCLI.handle(args) { exit(0) }    // --speak "text"
 if DictateCLI.handle(args) { exit(0) }  // --clean / --transcribe / --engine / --apply / --selftest
