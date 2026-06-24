@@ -175,6 +175,15 @@ by your other on-device "memex" apps, and **reused on reinstall instead of re-do
 better engines…** shows the **source and path of each engine** and asks before each step, so nothing
 installs without your yes.
 
+## Built on the memex standard
+
+voz follows **[memex](https://github.com/SethMed7/memex)** — a local-first, text-only knowledge +
+memory structure that any AI assistant (or app) can plug into. Concretely, voz keeps its model weights
+in memex's shared on-device AI store **`~/.memex/ai`**: the principle is **big model weights live once
+and are reused across memex apps** (voz, breve, rotli…), so a model installed for one app is found by
+the rest — and a reinstall reuses it instead of re-downloading. `Shared/AIStore.swift` owns voz's path
+resolution (shared → app/legacy); the standard itself lives in the [memex project](https://github.com/SethMed7/memex).
+
 ## Privacy
 
 No cloud, no API keys, no accounts, no telemetry — **everything stays on your Mac.** voz keeps a
